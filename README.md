@@ -39,6 +39,62 @@
 <!-- The path a submission takes, from arriving to the label a reader sees.
      Six or seven steps — this is the trace you wrote in Milestone 1. -->
 
+1. A writer sends their text and their creator ID to the /submit route in app.py. The route checks that there is actually some text. If there isn't, it sends back an error instead of crashing.
+
+2. The text goes to the model signal in detector.py. A language model running on this machine reads it and measures how predictable it is. This adds a model score between 0 and 1, where higher means more likely AI.
+
+3. The text goes to the style signal in stylometry.py. This looks at the shape of the writing: how much sentence lengths vary, how often words repeat, and how punctuation is used. This adds a style score between 0 and 1, where higher again means more likely AI.
+
+4. The two scores go to combine_signals in scoring.py, which merges them into one overall score. This is where I decide how much to trust each signal and what happens when they disagree.
+
+5. The overall score goes to score_to_label in scoring.py. It uses the thresholds in config.py to sort the text into one of three groups: likely human, unsure, or likely AI. It also adds the sentence a reader will see.
+
+6. The decision is written to the audit log by audit.py. The text gets a content ID, and the log keeps both signal scores, the overall score and the label. That way the decision can be checked later and the writer can appeal it.
+
+7. The service sends the result back to the writer: the content ID, the guess, the confidence, the label, and both signal scores. If the writer thinks it's wrong, they can send the content ID and their reasoning to /appeal. That changes the status and records the appeal in the log.
+
+### The endpoints
+
+Both endpoints take JSON and return JSON. Every error, from either endpoint, has the same shape: {"error": "<short code>", "message": "<a sentence a person can read>"}.
+
+POST /submit
+
+What goes in:
+- text: string, required. Must contain at least one non-space character and be no longer than 20,000 characters.
+- creator_id: string, optional. Identifies who submitted. If it's missing, it is recorded as "unknown".
+
+What comes out on success (200):
+- content_id: string, starting with "c_" followed by 12 letters and numbers, for example "c_3f9a1b2c4d5e". It is unique to this submission and is what you send to /appeal.
+- creator_id: string, the same value that was sent in (or "unknown").
+- guess: string, always exactly one of "human", "unsure" or "ai", in lowercase.
+- confidence: number from 0 to 1. This is the combined score from both signals. It always means how likely the text is to be AI, whatever the guess is. 0 means confidently human, 1 means confidently AI.
+- label: string, the full sentence shown to the writer. It explains the result in plain words and, for "unsure" and "ai", mentions that they can appeal.
+- model_score: number from 0 to 1, the model signal from detector.py. Higher means more likely AI.
+- style_score: number from 0 to 1, the style signal from stylometry.py. Higher means more likely AI.
+
+What comes out when something goes wrong:
+- 400 with error "bad_request" if the body isn't JSON, or text is missing, not a string, or empty.
+- 400 with error "text_too_long" if text is over 20,000 characters.
+- 429 if the caller has sent too many submissions (rate limiting, added in unit 8).
+
+POST /appeal
+
+What goes in:
+- content_id: string, required. Must be a content_id that /submit returned earlier.
+- reasoning: string, required, not empty. The writer's explanation of why the result is wrong.
+- creator_id: string, optional. If it's missing, the creator_id from the original submission is used.
+
+What comes out on success (200):
+- content_id: string, the same one that was sent in.
+- status: string, always "under_review".
+- message: string, a sentence confirming the appeal was received and that a person will review it.
+
+What comes out when something goes wrong:
+- 400 with error "bad_request" if the body isn't JSON, or content_id or reasoning is missing, not a string, or empty.
+- 404 with error "not_found" if no submission with that content_id exists.
+
+Appealing the same content_id more than once is allowed. Each appeal is recorded in the log, and the status stays "under_review". The original decision is never changed or deleted. The appeal is added after it in the log.
+
 
 
 ---
@@ -53,19 +109,39 @@
 
 ### Signal one — the model signal
 
-**What it measures:**
+**What it measures:** How predictable the text is. A small language model (GPT-2) runs on this machine and reads the text word by word, checking how easily it could have guessed each next word. This is called perplexity. detector.py turns it into a score from 0 to 1, where a higher score means the text was easier to predict and so more likely AI.
 
-**Why that might differ between human and AI writing:**
+**Why that might differ between human and AI writing:** An AI model writes by picking a likely next word, so the text it produces is text a model finds easy to predict. People's writing is less predictable.
 
-**What it can't see:**
+**What it can't see:** who actually wrote the text. A detector only measures how predictable the writing is, and simple, plain writing looks predictable whether a person or a machine produced it. That means honest writers can get flagged by mistake, while AI text that’s been roughed up a little can slip through as human.
 
 ### Signal two — the style signal
 
-**What it measures:**
+**What it measures:** The style of the writing, without reading the meaning. It looks at three things: how much sentence lengths vary, how often words repeat, and punctuation that is used. stylometry.py combines these into a score from 0 to 1, where a higher score means more likely AI.
 
-**Why that might differ between human and AI writing:**
+**Why that might differ between human and AI writing:** AI writing is very even. Its sentences are about the same length, it uses the same kinds of words, and its punctuation is regular. This is because AI always picks the most likely next word, so the text comes out average. People write in a more uneven way. A short sentence of three words can sit next to a long one of forty words. People also have their own habits with dashes, semicolons, and repeating words.
 
-**What it can't see:**
+**What it can't see:** what the text means. A detector only looks at the shape of the writing, so anything that changes the sstyle moves the score. Adding typos, splitting long sentences into short ones, putting in a quotation, or adding a few dashes can make AI text look human, and these are easy to do on purpose. It can also wrongly flag a person who naturally writes in a steady, tidy way, with sentences of the same length and plain punctuation.
+
+### The false positive I'm designing against
+
+The writer: a student writing an essay in English, which is their second language. They wrote every word themselves. Because they stick to words they're sure of, the essay uses common vocabulary, short sentences of similar length, and simple punctuation.
+
+What score they get: the model signal finds plain, common wording easy to predict, so it scores them high, around 0.75. The style signal sees even sentence lengths, repeated words and plain punctuation, so it also scores them on the AI side, around 0.6. Combined, they land around 0.7. With the starting thresholds in config.py (human below 0.35, AI above 0.65), that might put them over the line into high-confidence AI.
+
+What the label says to them: if the AI label reads like a verdict, such as "This was written by AI", an honest student is being told they cheated. Nothing in the response tells them why, or that the system can be wrong.
+
+What they can do about it: the response gives them a content ID. They can send that ID with their explanation to /appeal, which moves the decision to under review and records the appeal in the audit log. But this only helps if they know the appeal exists, so the label itself has to tell them.
+
+What this changes in my design:
+
+1. Thresholds: someone like this student should land in unsure, not AI. A plain human essay should not be able to reach the AI label on predictability alone, so I'll set the AI threshold high enough that it takes strong evidence from both signals.
+
+2. Combining rule: both of my signals are fooled by the same kind of writing, so two high scores on plain text are less independent than they look. The AI label should need both signals to agree clearly, and when they disagree, the answer should be unsure.
+
+3. Labels: the AI and unsure labels should describe what the system noticed, not accuse the writer. They should say that the system can be wrong and that the writer can appeal using their content ID.
+
+The trade: making it harder to reach the AI label means some real AI text will be labelled unsure instead. I'd rather let some AI text through as unsure than tell an honest writer they cheated.
 
 ### The combining rule
 
