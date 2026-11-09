@@ -207,6 +207,77 @@ $ curl -X POST http://127.0.0.1:5000/submit \
 
 ```
 
+curl.exe -X POST http://127.0.0.1:5000/submit -H "Content-Type: application/json" -d '{\"text\": \"This is a test of a human writing.\", \"creator_id\": \"ewelina\"}'
+{
+  "confidence": 0.2274,
+  "content_id": "c_5afbefde8168",
+  "creator_id": "ewelina",
+  "guess": "unsure",
+  "label": "not built yet",
+  "model_score": 0.2274,
+  "style_score": null
+}
+curl.exe -X POST http://127.0.0.1:5000/submit -H "Content-Type: application/json" -d '{\"text\": \"Time management is an essential skill that plays a crucial role in both academic and professional success. By prioritizing tasks effectively, individuals can reduce stress and enhance their overall productivity. One widely recommended strategy is breaking larger projects into smaller, more manageable steps, which helps prevent procrastination and fosters a sense of accomplishment. Additionally, tools such as planners and digital calendars can provide valuable structure. However, it is important to remember that effective time management is not about filling every moment with work. Rather, it involves striking a healthy balance between responsibilities and rest. In conclusion, mastering time management empowers individuals to achieve their goals while maintaining their well-being.\", \"creator_id\": \"ai\"}'
+{
+  "confidence": 0.7969,
+  "content_id": "c_072157f33d30",
+  "creator_id": "ai",
+  "guess": "unsure",
+  "label": "not built yet",
+  "model_score": 0.7969,
+  "style_score": null
+}
+curl.exe -X POST http://127.0.0.1:5000/submit -H "Content-Type: application/json" -d '{\"text\": \"ok so I finally tried that ramen place on 5th everyone keeps talking about. honestly? kind of overrated. the broth was good but like, $19 for a bowl is a lot, and they forgot my egg. my friend got the spicy one and said it was way better so maybe I just ordered wrong lol. would go back but probably not on purpose\", \"creator_id\": \"AI pretending to be human\"}'
+{
+  "confidence": 0.3996,
+  "content_id": "c_6a4764fe6fa5",
+  "creator_id": "AI pretending to be human",
+  "guess": "unsure",
+  "label": "not built yet",
+  "model_score": 0.3996,
+  "style_score": null
+}
+
+curl.exe "http://127.0.0.1:5000/log?limit=3"                          
+{                                                                                                                                                               
+  "count": 3,                                                                                                                                                   
+  "entries": [                                                                                                                                                  
+    {                                                                                                                                                           
+      "combined_score": null,                                                                                                                                   
+      "content_id": "c_5afbefde8168",          
+      "creator_id": "ewelina",
+      "guess": "unsure",
+      "label": null,
+      "model_score": 0.2274,
+      "status": "decided",
+      "style_score": null,
+      "timestamp": "2026-11-09T08:25:15+00:00"
+    },
+    {
+      "combined_score": null,
+      "content_id": "c_072157f33d30",
+      "creator_id": "ai",
+      "guess": "unsure",
+      "label": null,
+      "model_score": 0.7969,
+      "status": "decided",
+      "style_score": null,
+      "timestamp": "2026-11-09T08:25:31+00:00"
+    },
+    {
+      "combined_score": null,
+      "content_id": "c_6a4764fe6fa5",
+      "creator_id": "AI pretending to be human",
+      "guess": "unsure",
+      "label": null,
+      "model_score": 0.3996,
+      "status": "decided",
+      "style_score": null,
+      "timestamp": "2026-11-09T08:30:13+00:00"
+    }
+  ]
+}
+
 **An appeal**
 
 ```bash

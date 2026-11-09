@@ -211,12 +211,14 @@ def submit():
     # python detector.py "some text"
     import detector
     model_score = detector.model_signal(text)
+    guess = "unsure"  # placeholder until score_to_label in Milestone 5
 
     # Step 4 - log the decision. The content_id is what /appeal needs later.
     content_id = f"c_{uuid.uuid4().hex[:12]}"
     audit.log_decision(
         content_id=content_id,
         creator_id=creator_id,
+        guess=guess,
         model_score=model_score,
         status="decided",
     )
@@ -225,7 +227,7 @@ def submit():
     return jsonify({
         "content_id": content_id,
         "creator_id": creator_id,
-        "guess": "unsure",
+        "guess": guess,
         "confidence": model_score,
         "label": "not built yet",
         "model_score": model_score,
