@@ -46,10 +46,11 @@ Two things worth knowing before you pick numbers:
 
 <!-- Your criterion. It must name a number. -->
 
+At most 1/10 human written text is labeled high confidence AI.
 
 
 **Why this target:**
-
+Accusing an honest writer of using AI when they didn't can get them in real trouble, so the detector should rarely make that mistake. Keeping it to 1 in 10 also means a “high confidence” label can actually be trusted.
 
 
 ---
@@ -57,11 +58,11 @@ Two things worth knowing before you pick numbers:
 ## 2.
 
 <!-- Your criterion. -->
-
+Using 5 AI-generated texts and 5 texts written by people without AI help, the average AI score is at least 0.3 higher than the average human score.
 
 
 **Why this target:**
-
+If AI and human texts score close together, no cutoff can tell them apart and the labels are just guesses. My unsure band is 0.3 wide (0.35 to 0.65), so a gap smaller than that means the two groups can't land on opposite sides of it. 
 
 
 ---
@@ -69,12 +70,11 @@ Two things worth knowing before you pick numbers:
 ## 3.
 
 <!-- Your criterion. -->
-
+Each of the three labels (human, unsure, ai) is produced by at least one input in every trial.
 
 
 **Why this target:**
-
-
+If one of the labels never shows up, it isn't doing anything, and that probably means something is off with my score ranges. This could really happen: a weighted average pulls scores toward the middle, so the human label may be hard to reach if the style signal doesn't change much.
 
 ---
 
@@ -82,11 +82,11 @@ Two things worth knowing before you pick numbers:
 
 <!-- Your criterion. -->
 
+10 out of 10 appeals with real content_ids return status under_review and show up in the log. Appeals with a made-up, empty, or missing content_id return a 404 or 400 and are not logged.
 
 
 **Why this target:**
-
-
+The appeal is a wrongly accused writer's only way to push back, so it has to work every time, not just most of the time. A writer who types the wrong ID should be told, not shown a confirmation for an appeal that was never saved.
 
 ---
 
@@ -94,11 +94,11 @@ Two things worth knowing before you pick numbers:
 
 <!-- Your criterion. -->
 
+Empty text, missing text, text set to null, and text over 20,000 characters each return a 400 with an error message. None return a 500 or crash the service.
 
 
 **Why this target:**
-
-
+Crashing on bad input is one of the most common failures, and people send text that's empty, missing, or way too long all the time, sometimes by accident and sometimes on purpose. My endpoint promises a clear 400 error for bad input like this, so every case should get one, with no exceptions.
 
 ---
 
