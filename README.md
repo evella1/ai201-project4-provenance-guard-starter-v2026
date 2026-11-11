@@ -207,14 +207,18 @@ The weak spot: the edited AI only just reaches AI (style 0.69, line at 0.65). A 
 
 | Label | Score range | The exact text a reader sees |
 |---|---|---|
-| high-confidence human |  |  |
-| unsure |  |  |
-| high-confidence AI |  |  |
+| high-confidence human | 0.00 – 0.35 | We think this was probably written by a person. |
+| unsure | 0.35 – 0.65 | We can't tell whether this was written by a person or with AI help. Parts of it read like both. This is not an accusation. If you wrote it yourself, you can tell us by appealing with your content ID. |
+| high-confidence AI | 0.65 – 1.00 | This text has patterns we often see in AI-generated writing. This is a guess, not proof, and we can be wrong. If you wrote it yourself, you can appeal using your content ID and a person will review it. |
+
+The ranges come from `HUMAN_THRESHOLD` and `AI_THRESHOLD` in config.py (`scoring.label_ranges()` prints them). A score of exactly 0.35 counts as human and exactly 0.65 as AI. In my tests, each label was reached: the forum post got human (0.23), my own plain text got unsure (0.53), and the AI essay got AI (0.76).
 
 **Why I worded the "unsure" one this way:**
 <!-- It's the hardest of the three. It has to admit uncertainty without
      sounding like an accusation, because the person reading it may well have
      written every word themselves. -->
+
+My own plain writing landed on unsure, so I wrote this label for a person like me: someone who wrote every word and is now being told the system isn't sure. It says plainly that the system can't tell, and "parts of it read like both" explains why without blaming the writer. "This is not an accusation" is there because that is the first thing an honest writer would worry about. It ends with what they can do: appeal with their content ID. The AI label also says it is "a guess, not proof", because even my AI label can be wrong, and my own writing scored higher than real AI on one signal.
 
 
 
@@ -232,62 +236,74 @@ The weak spot: the edited AI only just reaches AI (style 0.69, line at 0.65). A 
      two off the response, so leaving them out costs you next unit's
      diagnostics. -->
 
-```bash
-curl.exe -X POST http://127.0.0.1:5000/submit -H "Content-Type: application/json" -d '{\"text\": \"Time management is an essential skill that plays a crucial role in both academic and professional success. By prioritizing tasks effectively, individuals can reduce stress and enhance their overall productivity. One widely recommended strategy is breaking larger projects into smaller, more manageable steps, which helps prevent procrastination and fosters a sense of accomplishment. Additionally, tools such as planners and digital calendars can provide valuable structure. However, it is important to remember that effective time management is not about filling every moment with work. Rather, it involves striking a healthy balance between responsibilities and rest. In conclusion, mastering time management empowers individuals to achieve their goals while maintaining their well-being.\", \"creator_id\": \"ai\"}'
+```powershell
+$text = @'
+Today, I went to see my friend at a coffee shop. We ordered pastries and coffee. Unfortunately the coffee came with extra sugar, which I didn't ask for. I almost asked for a refund but held back seeing how busy the baristas were. We had some good chat about what we've been up to in the last few weeks. She told me she's been working out a lot. I found that inspiring and I signed up for a gym the next day. We'll see how it goes.
+'@
+$body = @{ text = $text; creator_id = "ewelina" } | ConvertTo-Json
+$body | curl.exe -X POST http://127.0.0.1:5000/submit -H "Content-Type: application/json" --data-binary "@-"
 ```
 
 ```json
 {
-  "confidence": 0.7969,
-  "content_id": "c_072157f33d30",
-  "creator_id": "ai",
+  "confidence": 0.5322,
+  "content_id": "c_01c723ac0f8f",
+  "creator_id": "ewelina",
   "guess": "unsure",
-  "label": "not built yet",
-  "model_score": 0.7969,
-  "style_score": null
+  "label": "We can't tell whether this was written by a person or with AI help. Parts of it read like both. This is not an accusation. If you wrote it yourself, you can tell us by appealing with your content ID.",
+  "model_score": 0.8288,
+  "style_score": 0.5322
 }
 ```
-
-The log entry for it (`curl.exe "http://127.0.0.1:5000/log?limit=1"`):
-
-```json
-{
-  "combined_score": null,
-  "content_id": "c_072157f33d30",
-  "creator_id": "ai",
-  "guess": "unsure",
-  "label": null,
-  "model_score": 0.7969,
-  "status": "decided",
-  "style_score": null,
-  "timestamp": "2026-11-09T08:25:31+00:00"
-}
-```
-
-<!-- TODO: re-run once style_signal, combine_signals and score_to_label are
-     wired into app.py. This run is from before that, so style_score is null
-     and the label is a placeholder. -->
 
 **An appeal**
 
-```bash
-$ curl -X POST http://127.0.0.1:5000/appeal \
-  -H "Content-Type: application/json" \
-  -d '{"content_id": "...", "reasoning": "..."}'
+```powershell
+$body = @{ content_id = "c_01c723ac0f8f"; reasoning = "I wrote this myself about meeting my friend. English is my second language, so I use simple words and short sentences." } | ConvertTo-Json
+$body | curl.exe -X POST http://127.0.0.1:5000/appeal -H "Content-Type: application/json" --data-binary "@-"
 ```
 
 ```json
-
+{
+  "content_id": "c_01c723ac0f8f",
+  "message": "Thanks, we've received your appeal. A person will review this decision; the original result is on hold until then.",
+  "status": "under_review"
+}
 ```
 
 **What the log shows afterwards**
 
-```bash
-$ curl "http://127.0.0.1:5000/log?limit=3"
+The original decision stays as it was, and the appeal is added after it with status `under_review`.
+
+```powershell
+curl.exe "http://127.0.0.1:5000/log?limit=2"
 ```
 
 ```json
-
+{
+  "count": 2,
+  "entries": [
+    {
+      "combined_score": 0.5322,
+      "content_id": "c_01c723ac0f8f",
+      "creator_id": "ewelina",
+      "guess": "unsure",
+      "label": "We can't tell whether this was written by a person or with AI help. Parts of it read like both. This is not an accusation. If you wrote it yourself, you can tell us by appealing with your content ID.",
+      "model_score": 0.8288,
+      "status": "decided",
+      "style_score": 0.5322,
+      "timestamp": "2026-11-11T09:00:12+00:00"
+    },
+    {
+      "content_id": "c_01c723ac0f8f",
+      "creator_id": "ewelina",
+      "event": "appeal",
+      "reasoning": "I wrote this myself about meeting my friend. English is my second language, so I use simple words and short sentences.",
+      "status": "under_review",
+      "timestamp": "2026-11-11T09:02:09+00:00"
+    }
+  ]
+}
 ```
 
 ---

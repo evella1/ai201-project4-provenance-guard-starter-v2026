@@ -99,12 +99,28 @@ def score_to_label(score: float) -> tuple[str, str]:
     think if they got it on their own work. That question is the whole
     milestone.
     """
-    # TODO: replace this — thresholds are in config.py
+    # Thresholds are in config.py. The unsure and AI labels never accuse: they
+    # say what the system noticed, that it can be wrong, and how to appeal.
     if score >= config.AI_THRESHOLD:
-        return "ai", "PLACEHOLDER — write the high-confidence AI label."
+        return "ai", AI_LABEL
     if score <= config.HUMAN_THRESHOLD:
-        return "human", "PLACEHOLDER — write the high-confidence human label."
-    return "unsure", "PLACEHOLDER — write the unsure label."
+        return "human", HUMAN_LABEL
+    return "unsure", UNSURE_LABEL
+
+
+HUMAN_LABEL = "We think this was probably written by a person."
+
+UNSURE_LABEL = (
+    "We can't tell whether this was written by a person or with AI help. "
+    "Parts of it read like both. This is not an accusation. If you wrote it "
+    "yourself, you can tell us by appealing with your content ID."
+)
+
+AI_LABEL = (
+    "This text has patterns we often see in AI-generated writing. This is a "
+    "guess, not proof, and we can be wrong. If you wrote it yourself, you can "
+    "appeal using your content ID and a person will review it."
+)
 
 
 def label_ranges() -> list[tuple[str, str]]:

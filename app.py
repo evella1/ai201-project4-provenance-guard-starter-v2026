@@ -220,7 +220,9 @@ def submit():
 
     # Step 6 - combine them (rule in scoring.py::combine_signals, numbers in config.py)
     combined_score = round(scoring.combine_signals(model_score, style_score), 4)
-    guess = "unsure"  # placeholder until score_to_label in Milestone 5
+
+    # Step 8 - turn the score into a guess and the sentence the writer sees
+    guess, label = scoring.score_to_label(combined_score)
 
     # Step 4 + 7 - log the decision with BOTH signal scores and the combined one,
     # so a surprising result can be traced to the signal that caused it.
@@ -232,6 +234,7 @@ def submit():
         model_score=model_score,
         style_score=style_score,
         combined_score=combined_score,
+        label=label,
         status="decided",
     )
 
@@ -241,7 +244,7 @@ def submit():
         "creator_id": creator_id,
         "guess": guess,
         "confidence": combined_score,
-        "label": "not built yet",
+        "label": label,
         "model_score": model_score,
         "style_score": style_score,
     }), 200
@@ -268,13 +271,37 @@ def appeal():
     wrong accusation and nothing at all.
     """
     payload = request.get_json(silent=True) or {}
+    content_id = payload.get("content_id")
+    reasoning = payload.get("reasoning")
 
-    # TODO: delete this and build the route.
+    # Bad input gets a clear 400 and is not logged.
+    if not isinstance(content_id, str) or not content_id.strip():
+        return jsonify({"error": "bad_request",
+                        "message": "Send JSON with a non-empty \"content_id\"."}), 400
+    if not isinstance(reasoning, str) or not reasoning.strip():
+        return jsonify({"error": "bad_request",
+                        "message": "Please include \"reasoning\": why you think the result is wrong."}), 400
+
+    # 1. The content_id must belong to a real earlier submission.
+    content_id = content_id.strip()
+    history = audit.entries_for(content_id)
+    if not history:
+        return jsonify({"error": "not_found",
+                        "message": f"We couldn't find a submission with content ID {content_id}. "
+                                   "Please check the ID from your original result."}), 404
+
+    # 2. Record the appeal after the original decision (the decision is never changed).
+    #    If no creator_id is sent, use the one from the original submission.
+    creator_id = payload.get("creator_id") or history[0].get("creator_id", "unknown")
+    audit.log_appeal(content_id=content_id, creator_id=creator_id, reasoning=reasoning.strip())
+
+    # 3. Confirm to the writer.
     return jsonify({
-        "error": "not_implemented",
-        "message": "POST /appeal isn't built yet — see the TODO in app.py.",
-        "you_sent": payload,
-    }), 501
+        "content_id": content_id,
+        "status": "under_review",
+        "message": "Thanks, we've received your appeal. A person will review "
+                   "this decision; the original result is on hold until then.",
+    }), 200
 
 
 # ── Already works ─────────────────────────────────────────────────────────────
