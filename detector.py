@@ -146,6 +146,9 @@ if __name__ == "__main__":
 
     if len(sys.argv) > 1:
         text = " ".join(sys.argv[1:])
+    elif not sys.stdin.isatty():
+        # Piped in: $text | python detector.py (keeps quote marks intact)
+        text = sys.stdin.read().strip()
     else:
         text = (
             "The implementation of the proposed framework requires careful "

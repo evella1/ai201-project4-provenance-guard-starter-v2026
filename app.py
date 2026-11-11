@@ -211,27 +211,39 @@ def submit():
     # python detector.py "some text"
     import detector
     model_score = detector.model_signal(text)
+
+    # Step 5 - the second signal, tested from the terminal first:
+    # $text | python stylometry.py
+    import stylometry
+    import scoring
+    style_score = round(stylometry.style_signal(text), 4)
+
+    # Step 6 - combine them (rule in scoring.py::combine_signals, numbers in config.py)
+    combined_score = round(scoring.combine_signals(model_score, style_score), 4)
     guess = "unsure"  # placeholder until score_to_label in Milestone 5
 
-    # Step 4 - log the decision. The content_id is what /appeal needs later.
+    # Step 4 + 7 - log the decision with BOTH signal scores and the combined one,
+    # so a surprising result can be traced to the signal that caused it.
     content_id = f"c_{uuid.uuid4().hex[:12]}"
     audit.log_decision(
         content_id=content_id,
         creator_id=creator_id,
         guess=guess,
         model_score=model_score,
+        style_score=style_score,
+        combined_score=combined_score,
         status="decided",
     )
 
-    # Step 1 - the route answers. Hardcoded without any logic yet.
+    # Both signal scores go in the response too: unit 8's tools read them from here.
     return jsonify({
         "content_id": content_id,
         "creator_id": creator_id,
         "guess": guess,
-        "confidence": model_score,
+        "confidence": combined_score,
         "label": "not built yet",
         "model_score": model_score,
-        "style_score": None,
+        "style_score": style_score,
     }), 200
 
 

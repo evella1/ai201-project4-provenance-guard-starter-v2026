@@ -64,8 +64,15 @@ def sentence_length_spread(text: str) -> float:
     `stdev` raises on fewer than two values. Decide what that should return
     before the attack set decides for you.
     """
-    # TODO: replace this
-    return 0.0
+    lengths = [len(words(s)) for s in sentences(text)]
+    lengths = [n for n in lengths if n > 0]
+    # One sentence has no spread. Returns 0.0, but style_signal never uses it:
+    # texts under 3 sentences get 0.5 ("can't tell") there.
+    if len(lengths) < 2:
+        return 0.0
+    # Higher = more human. In testing: AI essay 0.26, edited AI 0.35, my plain
+    # text 0.39, forum post 0.51. Fooled by AI told to "sound casual" (0.73).
+    return statistics.stdev(lengths) / statistics.mean(lengths)
 
 
 def type_token_ratio(text: str) -> float:
@@ -79,9 +86,23 @@ def type_token_ratio(text: str) -> float:
     longer, because common words repeat. Two texts of different lengths aren't
     directly comparable on it, and if your test inputs vary a lot in length,
     that alone can look like a signal.
+
+    Fix: average the ratio over 50-word windows.
+
+    Direction: higher = more AI. I first assumed the opposite, but in testing
+    all three AI texts scored higher (0.92, 0.92, 0.89) than both human texts
+    (0.87, 0.80). AI picks a wide, polished vocabulary; people repeat plain
+    words. It is the only measure that separated my plain text from the
+    edited AI, but only by 0.05 — five samples is not much evidence.
     """
-    # TODO: replace this
-    return 0.0
+    ws = words(text)
+    if not ws:
+        return 0.0
+    window = 50
+    if len(ws) <= window:
+        return len(set(ws)) / len(ws)
+    ratios = [len(set(ws[i:i + window])) / window for i in range(len(ws) - window + 1)]
+    return statistics.mean(ratios)
 
 
 def punctuation_density(text: str) -> float:
@@ -93,9 +114,25 @@ def punctuation_density(text: str) -> float:
         semicolons, dashes — is a real choice. Semicolons and em dashes are
         more interesting than full stops, because they vary more between
         writers.
+
+    Measures variety only: how many different punctuation marks, out of 6.
+    Returns 0–1, flipped so that higher = more AI (few kinds of marks).
+
+    Why no comma count: I tried it, but a real human forum post had more
+    commas (8.5 per 100 words) than an AI essay (about 5.5). Comma habits
+    depend on the writer, not on whether it's AI. Same for dashes and
+    semicolons, which were 0 in every sample.
+
+    Why variety: the AI essay used 3 kinds of marks (. , -), the forum post
+    used 6 (! " # ' , .).
+
+    Weakness: plain human writing also uses few marks. My plain text scored
+    0.50, the same as the AI essay. This only spots lively writing.
     """
-    # TODO: replace this
-    return 0.0
+    if not text.strip():
+        return 0.0
+    marks = set(re.findall(r"[^\w\s]", text))
+    return 1 - min(len(marks) / 6, 1.0)
 
 
 # ── Combining them ───────────────────────────────────────────────────────────
@@ -121,15 +158,39 @@ def style_signal(text: str) -> float:
     clearly human, plain conventional human writing, lightly-edited AI — before
     you trust it. Plain and ordinary, not formal: formal prose reads as *human*
     to signal one, and it is plain writing that gets accused.
+
+    My rule: put each measure on 0–1 (higher = more AI), then average them.
+    The limits below come from my five calibration texts, so they fit those
+    texts better than they will fit new ones. Re-check them on new samples.
     """
-    # TODO: replace this
-    return 0.5
+    # Too short to judge: answer "can't tell" instead of guessing.
+    if len(sentences(text)) < 3 or len(words(text)) < 40:
+        return 0.5
+
+    # Even sentences = AI. 0.20 or less counts as fully AI, 0.60 or more as fully human.
+    spread_part = _scale(sentence_length_spread(text), human=0.60, ai=0.20)
+    # Wide, polished vocabulary = AI. 0.93 or more fully AI, 0.78 or less fully human.
+    variety_part = _scale(type_token_ratio(text), human=0.78, ai=0.93)
+    # Already 0–1 with higher = AI.
+    punct_part = punctuation_density(text)
+
+    # Equal weights: with only five test texts, I have no good reason to favour one.
+    return (spread_part + variety_part + punct_part) / 3
+
+
+def _scale(value: float, human: float, ai: float) -> float:
+    """Map value onto 0–1: the `human` limit gives 0, the `ai` limit gives 1."""
+    score = (value - human) / (ai - human)
+    return max(0.0, min(1.0, score))
 
 
 if __name__ == "__main__":
     import sys
 
-    text = " ".join(sys.argv[1:]) or (
+    # Text can come from arguments, or piped in: $text | python stylometry.py
+    # Piping keeps quote marks that PowerShell strips from arguments.
+    piped = "" if sys.stdin.isatty() else sys.stdin.read().strip()
+    text = " ".join(sys.argv[1:]) or piped or (
         "The system works well. It handles most cases correctly and provides "
         "good results. Users generally find it easy to use and understand."
     )
@@ -139,4 +200,3 @@ if __name__ == "__main__":
     print(f"type_token_ratio         {type_token_ratio(text)}")
     print(f"punctuation_density      {punctuation_density(text)}")
     print(f"style_signal             {style_signal(text)}   (higher = more likely AI)")
-    print("\nAll zeros? These are stubs — Milestone 4 is where you build them.")

@@ -52,7 +52,21 @@ def combine_signals(model_score: float, style_score: float) -> float:
     The weights in config.py are placeholders. Change them, or ignore them and
     write a different rule.
     """
-    # TODO: replace this
+    # My rule: calling a text AI needs BOTH signals to agree.
+    #
+    # If both lean AI (above config.BOTH_LEAN_AI, 0.5), use the LOWER one. One confident signal
+    # alone can't push a text to AI. Otherwise use the average.
+    #
+    # Why: my own plain writing got model 0.83 (plain words are easy for
+    # GPT-2 to predict) but style 0.53. A plain average gave 0.68, which is
+    # labelled AI: a false accusation. With this rule it gets 0.53, "unsure".
+    # Real AI texts still reach AI, because both signals are high on them
+    # (essay 0.80 / 0.76 -> 0.76, edited AI 0.75 / 0.69 -> 0.69).
+    #
+    # The trade: AI text that fools either signal lands in unsure, not AI.
+    # I accept that, because a missed AI text costs less than accusing a person.
+    if model_score > config.BOTH_LEAN_AI and style_score > config.BOTH_LEAN_AI:
+        return min(model_score, style_score)
     return (
         config.WEIGHT_MODEL_SIGNAL * model_score
         + config.WEIGHT_STYLE_SIGNAL * style_score

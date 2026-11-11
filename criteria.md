@@ -46,7 +46,7 @@ Two things worth knowing before you pick numbers:
 
 <!-- Your criterion. It must name a number. -->
 
-At most 1/10 human written text is labeled high confidence AI.
+At most 1/10 written by me (Ewelina) text is labeled high confidence AI.
 
 
 **Why this target:**

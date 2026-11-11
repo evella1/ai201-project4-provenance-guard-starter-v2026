@@ -117,11 +117,31 @@ Appealing the same content_id more than once is allowed. Each appeal is recorded
 
 ### Signal two — the style signal
 
-**What it measures:** The style of the writing, without reading the meaning. It looks at three things: how much sentence lengths vary, how often words repeat, and punctuation that is used. stylometry.py combines these into a score from 0 to 1, where a higher score means more likely AI.
+**What it measures:** The style of the writing, without reading the meaning. It looks at three things: how much sentence lengths vary, how often words repeat, and how many different kinds of punctuation marks are used. stylometry.py combines these into a score from 0 to 1, where a higher score means more likely AI.
 
 **Why that might differ between human and AI writing:** AI writing is very even. Its sentences are about the same length, it uses the same kinds of words, and its punctuation is regular. This is because AI always picks the most likely next word, so the text comes out average. People write in a more uneven way. A short sentence of three words can sit next to a long one of forty words. People also have their own habits with dashes, semicolons, and repeating words.
 
-**What it can't see:** what the text means. A detector only looks at the shape of the writing, so anything that changes the sstyle moves the score. Adding typos, splitting long sentences into short ones, putting in a quotation, or adding a few dashes can make AI text look human, and these are easy to do on purpose. It can also wrongly flag a person who naturally writes in a steady, tidy way, with sentences of the same length and plain punctuation.
+**What it can't see:** what the text means. A detector only looks at the shape of the writing, so anything that changes the style moves the score. Adding typos, splitting long sentences into short ones, putting in a quotation, or adding a question mark can make AI text look human, and these are easy to do on purpose. It can also wrongly flag a person who naturally writes in a steady, tidy way, with sentences of the same length and plain punctuation.
+
+**What I found when testing it:** I tested three texts: a formal AI essay, a casual restaurant review that I asked an AI to write so it sounds like a person, and a real forum post from 15 years ago.
+
+| Measure | AI essay | AI pretending to be human | Real human (forum) |
+|---|---|---|---|
+| sentence length spread (higher = more human) | 0.26 | 0.73 | 0.51 |
+| word variety (higher = more AI) | 0.92 | 0.89 | 0.80 |
+| punctuation sameness (higher = more AI) | 0.50 | 0.33 | 0.00 |
+
+The fake casual review fooled the sentence measure. It has uneven sentences and short fragments like "honestly?", so it scored *more* human than the real human. The attacker doesn't even need to edit the text by hand. Asking the AI to "sound casual" is enough, because the style is exactly what it copies. On the other two measures it landed between the AI essay and the real human, so the style signal will probably call it unsure, not AI.
+
+Word variety worked the opposite way from what I expected. I thought AI would repeat words more, but both AI texts used a wider vocabulary than the human. So I count a higher value as more AI.
+
+I also dropped three ideas after testing:
+- A list of typical AI words ("delve", "crucial", "moreover"). It found only 2 of 110 words in a clear AI essay, it is easy to avoid, and formal or non-native writers use many of these words too, so it would push my false positive (below) toward AI.
+- Counting dashes and semicolons. None of my samples used them, so the measure was 0 for everything and couldn't tell texts apart.
+- Counting commas. The real human used more commas (8.5 per 100 words) than the AI essay (about 5.5). Comma habits depend on the person, not on AI. I kept only how many *different* punctuation marks are used.
+
+A testing lesson: in PowerShell, text inside double quotes loses things. `$19` disappeared (PowerShell read it as a variable) and quote marks were removed, which changed the punctuation score. I now pass text with a here-string (`@'...'@`) piped into the script.
+
 
 ### The false positive I'm designing against
 
@@ -148,16 +168,31 @@ The trade: making it harder to reach the AI label means some real AI text will b
 <!-- Write the rule in words, then give the numbers. What happens when the two
      signals disagree? -->
 
-**The rule:**
+**The rule:** To call a text AI, both signals have to agree. If both scores are above 0.5, the combined score is the lower of the two, so one confident signal alone can't push a text to AI. In every other case, the combined score is the average of the two.
 
-**The numbers:**
+**The numbers:** All of these are in config.py.
+- "Both lean AI" cut-off: `BOTH_LEAN_AI = 0.5`
+- Weights for the average: `WEIGHT_MODEL_SIGNAL = 0.5`, `WEIGHT_STYLE_SIGNAL = 0.5`. Equal, because with five test texts I have no evidence that one signal deserves more.
+- Label thresholds: `HUMAN_THRESHOLD = 0.35`, `AI_THRESHOLD = 0.65`. Below 0.35 is human, above 0.65 is AI, in between is unsure.
+
+I tested five texts:
+
+| Text | Model | Style | Plain average | My rule | Label |
+|---|---|---|---|---|---|
+| Clearly AI (essay) | 0.80 | 0.76 | 0.78 | 0.76 | AI |
+| Lightly-edited AI | 0.75 | 0.69 | 0.72 | 0.69 | AI |
+| Plain human (my own writing) | 0.83 | 0.53 | 0.68 (AI ✗) | 0.53 | unsure |
+| AI pretending to be human | 0.40 | 0.35 | 0.37 | 0.37 | unsure |
+| Clearly human (forum post) | 0.32 | 0.13 | 0.22 | 0.22 | human |
 
 **Where it lives:** `scoring.py::combine_signals`
 
 <!-- ⚠️ The grader checks your code against that line. If your rule lives
      somewhere else, say where. -->
 
-**A case where my two signals split, and what my rule does with it:**
+**A case where my two signals split, and what my rule does with it:** My own plain writing about meeting a friend at a coffee shop. The model signal gave it 0.83, the most AI-like score of all five texts, even higher than the real AI essay. That is because short sentences and everyday words are easy for GPT-2 to predict. The style signal gave it only 0.53. A plain average would be 0.68, which is labelled AI, so the system would accuse me of using AI for my own writing. My rule takes the lower score, 0.53, so it is labelled unsure. The real AI texts still reach AI, because both signals are high on them.
+
+The weak spot: the edited AI only just reaches AI (style 0.69, line at 0.65). A slightly heavier edit would drop it to unsure. That is the trade I chose: I'd rather let some AI through as unsure than accuse a person.
 
 
 
@@ -198,26 +233,10 @@ The trade: making it harder to reach the AI label means some real AI text will b
      diagnostics. -->
 
 ```bash
-$ curl -X POST http://127.0.0.1:5000/submit \
-  -H "Content-Type: application/json" \
-  -d '{"text": "...", "creator_id": "..."}'
+curl.exe -X POST http://127.0.0.1:5000/submit -H "Content-Type: application/json" -d '{\"text\": \"Time management is an essential skill that plays a crucial role in both academic and professional success. By prioritizing tasks effectively, individuals can reduce stress and enhance their overall productivity. One widely recommended strategy is breaking larger projects into smaller, more manageable steps, which helps prevent procrastination and fosters a sense of accomplishment. Additionally, tools such as planners and digital calendars can provide valuable structure. However, it is important to remember that effective time management is not about filling every moment with work. Rather, it involves striking a healthy balance between responsibilities and rest. In conclusion, mastering time management empowers individuals to achieve their goals while maintaining their well-being.\", \"creator_id\": \"ai\"}'
 ```
 
 ```json
-
-```
-
-curl.exe -X POST http://127.0.0.1:5000/submit -H "Content-Type: application/json" -d '{\"text\": \"This is a test of a human writing.\", \"creator_id\": \"ewelina\"}'
-{
-  "confidence": 0.2274,
-  "content_id": "c_5afbefde8168",
-  "creator_id": "ewelina",
-  "guess": "unsure",
-  "label": "not built yet",
-  "model_score": 0.2274,
-  "style_score": null
-}
-curl.exe -X POST http://127.0.0.1:5000/submit -H "Content-Type: application/json" -d '{\"text\": \"Time management is an essential skill that plays a crucial role in both academic and professional success. By prioritizing tasks effectively, individuals can reduce stress and enhance their overall productivity. One widely recommended strategy is breaking larger projects into smaller, more manageable steps, which helps prevent procrastination and fosters a sense of accomplishment. Additionally, tools such as planners and digital calendars can provide valuable structure. However, it is important to remember that effective time management is not about filling every moment with work. Rather, it involves striking a healthy balance between responsibilities and rest. In conclusion, mastering time management empowers individuals to achieve their goals while maintaining their well-being.\", \"creator_id\": \"ai\"}'
 {
   "confidence": 0.7969,
   "content_id": "c_072157f33d30",
@@ -227,56 +246,27 @@ curl.exe -X POST http://127.0.0.1:5000/submit -H "Content-Type: application/json
   "model_score": 0.7969,
   "style_score": null
 }
-curl.exe -X POST http://127.0.0.1:5000/submit -H "Content-Type: application/json" -d '{\"text\": \"ok so I finally tried that ramen place on 5th everyone keeps talking about. honestly? kind of overrated. the broth was good but like, $19 for a bowl is a lot, and they forgot my egg. my friend got the spicy one and said it was way better so maybe I just ordered wrong lol. would go back but probably not on purpose\", \"creator_id\": \"AI pretending to be human\"}'
-{
-  "confidence": 0.3996,
-  "content_id": "c_6a4764fe6fa5",
-  "creator_id": "AI pretending to be human",
-  "guess": "unsure",
-  "label": "not built yet",
-  "model_score": 0.3996,
-  "style_score": null
-}
+```
 
-curl.exe "http://127.0.0.1:5000/log?limit=3"                          
-{                                                                                                                                                               
-  "count": 3,                                                                                                                                                   
-  "entries": [                                                                                                                                                  
-    {                                                                                                                                                           
-      "combined_score": null,                                                                                                                                   
-      "content_id": "c_5afbefde8168",          
-      "creator_id": "ewelina",
-      "guess": "unsure",
-      "label": null,
-      "model_score": 0.2274,
-      "status": "decided",
-      "style_score": null,
-      "timestamp": "2026-11-09T08:25:15+00:00"
-    },
-    {
-      "combined_score": null,
-      "content_id": "c_072157f33d30",
-      "creator_id": "ai",
-      "guess": "unsure",
-      "label": null,
-      "model_score": 0.7969,
-      "status": "decided",
-      "style_score": null,
-      "timestamp": "2026-11-09T08:25:31+00:00"
-    },
-    {
-      "combined_score": null,
-      "content_id": "c_6a4764fe6fa5",
-      "creator_id": "AI pretending to be human",
-      "guess": "unsure",
-      "label": null,
-      "model_score": 0.3996,
-      "status": "decided",
-      "style_score": null,
-      "timestamp": "2026-11-09T08:30:13+00:00"
-    }
-  ]
+The log entry for it (`curl.exe "http://127.0.0.1:5000/log?limit=1"`):
+
+```json
+{
+  "combined_score": null,
+  "content_id": "c_072157f33d30",
+  "creator_id": "ai",
+  "guess": "unsure",
+  "label": null,
+  "model_score": 0.7969,
+  "status": "decided",
+  "style_score": null,
+  "timestamp": "2026-11-09T08:25:31+00:00"
 }
+```
+
+<!-- TODO: re-run once style_signal, combine_signals and score_to_label are
+     wired into app.py. This run is from before that, so style_score is null
+     and the label is a placeholder. -->
 
 **An appeal**
 

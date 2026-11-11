@@ -54,8 +54,13 @@ DETECTOR_MAX_TOKENS = 400
 # down BEFORE you code it, and to put the numbers in your README. Whatever you
 # decide, it goes here.
 
+# My rule (scoring.py::combine_signals): if both signals are above
+# BOTH_LEAN_AI, use the lower one, so one signal alone can't reach AI.
+# Otherwise use the weighted average below. Equal weights: with five test
+# texts I have no evidence that one signal deserves more.
 WEIGHT_MODEL_SIGNAL = 0.5
 WEIGHT_STYLE_SIGNAL = 0.5
+BOTH_LEAN_AI = 0.5
 
 
 # ─── Thresholds (Milestone 5) ────────────────────────────────────────────────
