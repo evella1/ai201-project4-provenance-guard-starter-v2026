@@ -312,15 +312,15 @@ curl.exe "http://127.0.0.1:5000/log?limit=2"
 
 **Moment 1**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* I gave Claude my idea for the style measures: standard deviation for sentence length, a list of words that AI uses a lot ("delve", "crucial", "moreover"), and counting long dashes and semicolons, because AI uses them and people rarely do.
+- *What came back:* Claude built all three. It put the AI-word check in its own function instead of inside the type-token ratio, because the two point in opposite directions. It also warned me that many people use semicolons and that these checks are easy to avoid.
+- *What I changed:* I tested it on real texts. The word list found only 2 of 110 words in a clear AI essay, and the dash and semicolon count was 0 for every text. I removed both. Then I tested a real forum post and saw that it had more commas than the AI essay, so I also dropped the comma count. I kept only how many different kinds of punctuation a text uses. I also flipped word variety to "higher = more AI", because my tests showed the opposite of what I expected.
 
 **Moment 2**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* My own plain text got a model score of 0.83, higher than the real AI essay, and a plain average labelled it AI. I asked Claude for suggestions about the rules.
+- *What came back:* Claude suggested a combining rule: if both signals are above 0.5, use the lower one; otherwise use the average. It showed that with this rule my text gets 0.53 (unsure) while the AI texts still get AI. Claude coded it in `scoring.py::combine_signals` with the 0.5 cut-off written straight into the code.
+- *What I changed:* First I asked Claude to explain the rule, because I thought it dropped the high score whenever the signals disagree. It actually only looks at whether both lean AI. Then I checked the rule against the milestone instructions, which say the weights and thresholds live in config.py. The 0.5 cut-off was not there, so I had it moved into config.py as `BOTH_LEAN_AI`, and listed every number by its config.py name in the combining rule section of this README.
 
 <!-- ═══════════════════════ UNIT 8 — THE TEST ═══════════════════════ -->
 
