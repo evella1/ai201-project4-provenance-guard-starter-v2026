@@ -199,7 +199,17 @@ def submit():
     what should this do when `text` is missing, empty, or enormous? A crash on
     a malformed input is one of the most common real failures there is.
     """
-    payload = request.get_json(silent=True) or {}
+    # Improvement (unit 8): validate the input before the signals see it.
+    # Each check below fixes a diagnosed failure from the attack run.
+
+    # Check 1 - the body must be a JSON object. A JSON array used to crash
+    # here (RQ07): `[...] or {}` keeps the list, and a list has no .get.
+    payload = request.get_json(silent=True)
+    if payload is None:
+        payload = {}
+    if not isinstance(payload, dict):
+        return jsonify({"error": "bad_request", "message": "Send a JSON object, like {\"text\": \"...\"}."}), 400
+
     text = payload.get("text")
     creator_id = payload.get("creator_id", "unknown")
 
@@ -207,10 +217,28 @@ def submit():
     if not isinstance(text, str) or not text.strip():
         return jsonify({"error": "bad_request", "message": "Send JSON with a non-empty \"text\"."}), 400
 
+    # Check 2 - creator_id must be a string. An object used to go straight
+    # into the log (RQ06).
+    if not isinstance(creator_id, str) or not creator_id.strip():
+        return jsonify({"error": "bad_request", "message": "\"creator_id\" must be a non-empty string."}), 400
+
+    # Check 3 - the length limit my endpoint description promises. Texts over
+    # it used to be scored and labelled AI (criterion 5, MF08).
+    if len(text) > config.MAX_TEXT_CHARS:
+        return jsonify({"error": "text_too_long",
+                        "message": f"Text is over {config.MAX_TEXT_CHARS:,} characters. Please send a shorter piece."}), 400
+
     # Step 3 - one real signal that we first tested from the terminal
     # python detector.py "some text"
     import detector
-    model_score = detector.model_signal(text)
+
+    # Check 4 - text too short to score. The detector raises an error below
+    # 3 tokens, which used to crash the route with a 500 (MF02).
+    try:
+        model_score = detector.model_signal(text)
+    except ValueError:
+        return jsonify({"error": "text_too_short",
+                        "message": "Text is too short to check. Please send at least a few sentences."}), 400
 
     # Step 5 - the second signal, tested from the terminal first:
     # $text | python stylometry.py
