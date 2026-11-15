@@ -322,6 +322,12 @@ curl.exe "http://127.0.0.1:5000/log?limit=2"
 - *What came back:* Claude suggested a combining rule: if both signals are above 0.5, use the lower one; otherwise use the average. It showed that with this rule my text gets 0.53 (unsure) while the AI texts still get AI. Claude coded it in `scoring.py::combine_signals` with the 0.5 cut-off written straight into the code.
 - *What I changed:* First I asked Claude to explain the rule, because I thought it dropped the high score whenever the signals disagree. It actually only looks at whether both lean AI. Then I checked the rule against the milestone instructions, which say the weights and thresholds live in config.py. The 0.5 cut-off was not there, so I had it moved into config.py as `BOTH_LEAN_AI`, and listed every number by its config.py name in the combining rule section of this README.
 
+**Moment 3**
+
+- *What I asked for:* to compare the numbers from my test runs, so I didn't have to do it by hand: the averages for criterion 2, the before and after attack runs, and which attacks changed from BROKE to HELD.
+- *What came back:* Claude read the result files, worked out the averages and counts.
+- *What I changed:* I filled in the verdict based on the numbers.
+
 <!-- ═══════════════════════ UNIT 8 — THE TEST ═══════════════════════ -->
 
 ---
