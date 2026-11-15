@@ -150,6 +150,20 @@ def health():
 
 # ── YOU BUILD THIS ────────────────────────────────────────────────────────────
 
+def _reject(creator_id, error: str, message: str):
+    """
+    Refuse a bad /submit request with a 400 AND leave a trace in the log.
+
+    A refused input used to vanish without a log entry. Now every 400 from
+    /submit is written as a `rejected` entry with the reason, like the 429s.
+    A creator_id that isn't a usable string is logged as "invalid", so the
+    log keeps one shape for that field.
+    """
+    who = creator_id if isinstance(creator_id, str) and creator_id.strip() else "invalid"
+    audit.log_rejection(creator_id=who, reason=error, route="/submit")
+    return jsonify({"error": error, "message": message}), 400
+
+
 @app.post("/submit")
 @limiter.limit(f"{config.RATE_LIMIT_PER_MINUTE}/minute;{config.RATE_LIMIT_PER_DAY}/day")
 def submit():
@@ -208,25 +222,25 @@ def submit():
     if payload is None:
         payload = {}
     if not isinstance(payload, dict):
-        return jsonify({"error": "bad_request", "message": "Send a JSON object, like {\"text\": \"...\"}."}), 400
+        return _reject("unknown", "bad_request", "Send a JSON object, like {\"text\": \"...\"}.")
 
     text = payload.get("text")
     creator_id = payload.get("creator_id", "unknown")
 
     # Step 2 - JSON goes in: pull text and creator_id out of the body
     if not isinstance(text, str) or not text.strip():
-        return jsonify({"error": "bad_request", "message": "Send JSON with a non-empty \"text\"."}), 400
+        return _reject(creator_id, "bad_request", "Send JSON with a non-empty \"text\".")
 
     # Check 2 - creator_id must be a string. An object used to go straight
     # into the log (RQ06).
     if not isinstance(creator_id, str) or not creator_id.strip():
-        return jsonify({"error": "bad_request", "message": "\"creator_id\" must be a non-empty string."}), 400
+        return _reject(creator_id, "bad_request", "\"creator_id\" must be a non-empty string.")
 
     # Check 3 - the length limit my endpoint description promises. Texts over
     # it used to be scored and labelled AI (criterion 5, MF08).
     if len(text) > config.MAX_TEXT_CHARS:
-        return jsonify({"error": "text_too_long",
-                        "message": f"Text is over {config.MAX_TEXT_CHARS:,} characters. Please send a shorter piece."}), 400
+        return _reject(creator_id, "text_too_long",
+                       f"Text is over {config.MAX_TEXT_CHARS:,} characters. Please send a shorter piece.")
 
     # Step 3 - one real signal that we first tested from the terminal
     # python detector.py "some text"
@@ -237,8 +251,8 @@ def submit():
     try:
         model_score = detector.model_signal(text)
     except ValueError:
-        return jsonify({"error": "text_too_short",
-                        "message": "Text is too short to check. Please send at least a few sentences."}), 400
+        return _reject(creator_id, "text_too_short",
+                       "Text is too short to check. Please send at least a few sentences.")
 
     # Step 5 - the second signal, tested from the terminal first:
     # $text | python stylometry.py

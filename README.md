@@ -412,7 +412,66 @@ Rules for each family:
 
 If a request never reached the check it was meant to test (for example, it was rate-limited first), I mark it **UNTESTED** and re-run it, instead of calling it HELD.
 
-Each attack's verdict is in the Verdict column of `results/attack_run_2026-11-15_0024.md`.
+Every attack and its outcome, from `results/attack_run_2026-11-15_0024.md`:
+
+| ID | Family | What it tried | Status | Guess | Score | Verdict |
+|---|---|---|---|---|---|---|
+| EV01 | evasion | signal two: typos raise word variety | 200 | unsure | 0.498 | HELD |
+| EV02 | evasion | signal two: broken-up sentences raise length spread | 200 | unsure | 0.507 | HELD |
+| EV03 | evasion | signal two: a pasted quotation changes the shape | 200 | unsure | 0.565 | HELD |
+| EV04 | evasion | signal one: unusual words raise perplexity | 200 | unsure | 0.611 | HELD |
+| EV05 | evasion | both signals: heavy human editing pass | 200 | human | 0.304 | BROKE |
+| EV06 | evasion | signal two: one very long sentence and one very short | 200 | unsure | 0.474 | HELD |
+| EV07 | evasion | signal two: padding with punctuation | 200 | unsure | 0.543 | HELD |
+| EV08 | evasion | signal one: text below the token window | 200 | unsure | 0.373 | HELD |
+| EV09 | evasion | both: AI text with a human opening paragraph bolted on | 200 | unsure | 0.555 | HELD |
+| EV10 | evasion | signal two: repeated stanza structure | 200 | ai | 0.714 | HELD |
+| FP01 | false_positive | plain, clear human writing with no flourishes | 200 | unsure | 0.508 | HELD |
+| FP02 | false_positive | human writing in a formal register | 200 | unsure | 0.522 | HELD |
+| FP03 | false_positive | a non-native English speaker writing carefully | 200 | unsure | 0.592 | HELD |
+| FP04 | false_positive | a student essay written to a rubric | 200 | unsure | 0.508 | HELD |
+| FP05 | false_positive | technical documentation written by a person | 200 | unsure | 0.646 | HELD |
+| FP06 | false_positive | a person imitating a formal template | 200 | unsure | 0.586 | HELD |
+| FP07 | false_positive | human writing that repeats a phrase deliberately | 200 | unsure | 0.552 | HELD |
+| FP08 | false_positive | very short genuine human submission | 200 | unsure | 0.411 | HELD |
+| PI01 | prompt_injection | instruction to ignore the check | 200 | unsure | 0.537 | HELD |
+| PI02 | prompt_injection | instruction disguised as a system message | 200 | human | 0.324 | BROKE |
+| PI03 | prompt_injection | instruction wrapped in the writer's voice | 200 | unsure | 0.594 | HELD |
+| PI04 | prompt_injection | attempt to make the label text hostile | 200 | unsure | 0.423 | HELD |
+| PI05 | prompt_injection | attempt to inject into the audit log | 200 | unsure | 0.570 | HELD |
+| PI06 | prompt_injection | instruction plus real human text | 200 | unsure | 0.491 | HELD |
+| MF01 | malformed | text is only whitespace | 400 | — | — | HELD |
+| MF02 | malformed | text is a single character | 500 | — | — | BROKE |
+| MF03 | malformed | text is control characters | 200 | human | 0.250 | BROKE |
+| MF04 | malformed | text is only punctuation | 200 | human | 0.256 | BROKE |
+| MF05 | malformed | text is a very long single word | 200 | ai | 0.749 | BROKE |
+| MF06 | malformed | text is emoji only | 200 | ai | 0.749 | BROKE |
+| MF07 | malformed | text is right-to-left script | 200 | ai | 0.703 | BROKE |
+| MF08 | malformed | text is 60,000 characters | 200 | ai | 0.681 | BROKE |
+| RQ01 | malformed | no text field at all | 400 | — | — | HELD |
+| RQ02 | malformed | no creator_id | 200 | unsure | 0.370 | HELD |
+| RQ03 | malformed | text is a number | 400 | — | — | HELD |
+| RQ04 | malformed | text is a list | 400 | — | — | HELD |
+| RQ05 | malformed | text is null | 400 | — | — | HELD |
+| RQ06 | malformed | creator_id is an object | 200 | human | 0.275 | BROKE |
+| RQ07 | malformed | body is a JSON array, not an object | 500 | — | — | BROKE |
+| RQ08 | malformed | body is unparseable JSON | 400 | — | — | HELD |
+| RQ09 | malformed | body is empty | 400 | — | — | HELD |
+| RQ10 | malformed | body is form-encoded, not JSON | 429 | — | — | UNTESTED |
+| RQ11 | malformed | body is JSON claiming to be plain text | 429 | — | — | UNTESTED |
+| RQ12 | malformed | deeply nested JSON | 400 | — | — | HELD |
+| FL01_01 | flood_same_creator | 20 rapid submissions from one creator | 200 | human | 0.264 | HELD |
+| FL01_02 | flood_same_creator | 20 rapid submissions from one creator | 200 | human | 0.264 | HELD |
+| FL01_03 | flood_same_creator | 20 rapid submissions from one creator | 200 | human | 0.264 | HELD |
+| FL01_04 | flood_same_creator | 20 rapid submissions from one creator | 200 | human | 0.264 | HELD |
+| FL01_05 | flood_same_creator | 20 rapid submissions from one creator | 200 | human | 0.264 | HELD |
+| FL01_06 | flood_same_creator | 20 rapid submissions from one creator | 429 | — | — | HELD |
+| FL01_07 | flood_same_creator | 20 rapid submissions from one creator | 429 | — | — | HELD |
+| FL01_08 | flood_same_creator | 20 rapid submissions from one creator | 429 | — | — | HELD |
+| FL01_09 | flood_same_creator | 20 rapid submissions from one creator | 429 | — | — | HELD |
+| FL01_10 | flood_same_creator | 20 rapid submissions from one creator | 429 | — | — | HELD |
+| FL01_11 | flood_same_creator | 20 rapid submissions from one creator | 429 | — | — | HELD |
+| FL01_12 | flood_same_creator | 20 rapid submissions from one creator | 429 | — | — | HELD |
 
 **What I found**
 
@@ -421,14 +480,14 @@ Each attack's verdict is in the Verdict column of `results/attack_run_2026-11-15
 - Prompt injection: no instruction was "obeyed", because nothing in my service reads instructions. But PI02's fake SYSTEM line made the text less predictable: the AI paragraph alone scores 0.75 on the model signal, with the line in front it scores 0.20, and the text got the human label. The label and log stayed clean for PI04 and PI05: the label is always my own fixed text, and the submitted text is never logged.
 - Malformed text: the biggest group of failures. Text that is not English writing (emoji, one repeated letter, Arabic) gets a confident AI label, and control characters or punctuation get a human label. The 57,640-character text was accepted although my endpoint description promises a 400 above 20,000 characters.
 - Crashes: a single character (MF02) and a JSON array body (RQ07) crashed the service with a 500. Both crash pages showed the debugger, because debug mode is on.
-- Rate limiting: the flood was stopped after 5 submissions, and every block was logged. RQ10 and RQ11 were rate-limited before the route ran, so they still need to be re-run.
+- Rate limiting: the flood was stopped after 5 submissions, and every block was logged. RQ10 and RQ11 were rate-limited before the route ran, so I re-ran them alone after the improvement (see Attack Run — After).
 
 
 **Ten audit log entries from the run**
 
 <!-- Choose entries that show the interesting failures, not the ten easiest. -->
 
-The ten worst outcomes from the run, worst first. Each entry is copied from `logs/audit.jsonl`.
+The eight worst outcomes from the run, worst first, then two rejections, so the log's refused requests are shown too. Each entry is copied from `logs/audit.jsonl`.
 
 1. MF07, Arabic text labelled AI. A real person writing in their own language is accused. GPT-2 was trained on English and splits each Arabic letter into several small pieces. After the first piece, the rest are easy to guess, so the whole text looks very predictable (model 0.91), and the style signal falls back to 0.5 because it can't count English words.
 
@@ -466,28 +525,28 @@ The ten worst outcomes from the run, worst first. Each entry is copied from `log
 {"timestamp": "2026-11-15T08:24:47+00:00", "content_id": "c_e4fea4f378a5", "creator_id": "attacker_MF06", "guess": "ai", "model_score": 0.9969, "style_score": 0.5, "combined_score": 0.7485, "label": "This text has patterns we often see in AI-generated writing. This is a guess, not proof, and we can be wrong. If you wrote it yourself, you can appeal using your content ID and a person will review it.", "status": "decided"}
 ```
 
-7. MF05, one letter repeated 4,000 times, labelled AI. GPT-2 finds a repeated letter perfectly predictable (model 1.00).
-
-```json
-{"timestamp": "2026-11-15T08:24:47+00:00", "content_id": "c_bd779222bc4c", "creator_id": "attacker_MF05", "guess": "ai", "model_score": 0.9976, "style_score": 0.5, "combined_score": 0.7488, "label": "This text has patterns we often see in AI-generated writing. This is a guess, not proof, and we can be wrong. If you wrote it yourself, you can appeal using your content ID and a person will review it.", "status": "decided"}
-```
-
-8. MF08, 57,640 characters, labelled AI. My endpoint description promises a 400 above 20,000 characters, but the text was accepted. The detector only reads the first 400 tokens, so most of the text was never checked.
+7. MF08, 57,640 characters, labelled AI. My endpoint description promises a 400 above 20,000 characters, but the text was accepted. The detector only reads the first 400 tokens, so most of the text was never checked.
 
 ```json
 {"timestamp": "2026-11-15T08:24:47+00:00", "content_id": "c_ad40e033715d", "creator_id": "attacker_MF08", "guess": "ai", "model_score": 0.9876, "style_score": 0.3738, "combined_score": 0.6807, "label": "This text has patterns we often see in AI-generated writing. This is a guess, not proof, and we can be wrong. If you wrote it yourself, you can appeal using your content ID and a person will review it.", "status": "decided"}
 ```
 
-9. RQ06, creator_id sent as an object. It was saved into the log as an object, not a string, so the log no longer has one shape for this field, and a creator_id like this also falls back to the address-based rate limit.
+8. RQ06, creator_id sent as an object. It was saved into the log as an object, not a string, so the log no longer has one shape for this field, and a creator_id like this also falls back to the address-based rate limit.
 
 ```json
 {"timestamp": "2026-11-15T08:24:48+00:00", "content_id": "c_e6b1374aa709", "creator_id": {"id": "x"}, "guess": "human", "model_score": 0.0492, "style_score": 0.5, "combined_score": 0.2746, "label": "We think this was probably written by a person.", "status": "decided"}
 ```
 
-10. MF03, control characters labelled "probably written by a person". The system claims something about text that isn't writing.
+9. A rejection from the flood (FL01): the rate limiter blocked the 6th submission in a minute and logged it, even though the request never reached the route.
 
 ```json
-{"timestamp": "2026-11-15T08:24:46+00:00", "content_id": "c_d5057d3493e3", "creator_id": "attacker_MF03", "guess": "human", "model_score": 0.0, "style_score": 0.5, "combined_score": 0.25, "label": "We think this was probably written by a person.", "status": "decided"}
+{"timestamp": "2026-11-15T08:24:48+00:00", "creator_id": "attacker_flood", "event": "rejected", "status": "rejected", "reason": "rate_limited", "limit": "5 per 1 minute"}
+```
+
+10. A rejection after the improvement: MF08 sent again, now refused with `text_too_long` and logged as a rejection instead of being scored.
+
+```json
+{"timestamp": "2026-11-15T23:30:26+00:00", "creator_id": "attacker_MF08", "event": "rejected", "status": "rejected", "reason": "text_too_long", "route": "/submit"}
 ```
 
 The two crashes (MF02, RQ07) are not in this list because they have no log entry at all: the service crashed before it reached `audit.log_decision`. A failure that leaves no trace is its own problem.
@@ -719,19 +778,82 @@ Covers: PI02, EV05.
 3. Text over 20,000 characters: 400 `text_too_long`. The limit is `MAX_TEXT_CHARS` in config.py.
 4. Text too short to score (the detector needs at least 3 tokens): 400 `text_too_short`, instead of a crash.
 
+Each of these 400s is also written to the audit log as a `rejected` entry with its reason, so a refused input leaves a trace (before, only the 429s did).
+
 **Which diagnosis pointed at it:** All four checks come from what I observed in the first ("before") runs: the attack run (`results/attack_run_2026-11-15_0024.md`) and the eval run (`results/run_2026-11-15_1344_before.md`). I didn't add anything those runs didn't show. Diagnosis 1, "The route doesn't check its input". It covered the criterion 5 miss and four broken attacks: MF08 (60,000 characters), MF02 (single character, crash), RQ07 (JSON array, crash) and RQ06 (creator_id as an object). Each check fixes one of them.
 
 ### Attack Run — After
 
 <!-- Same format. `run_attacks.py --label after` -->
 
-Run: `results/attack_run_2026-11-15_1427_after.md` (same 56 attacks, same rules for HELD and BROKE). Each attack's verdict is in its Verdict column.
+Run: `results/attack_run_2026-11-15_1427_after.md` (same 56 attacks, same rules for HELD and BROKE).
+
+| ID | Family | What it tried | Status | Guess | Score | Verdict |
+|---|---|---|---|---|---|---|
+| EV01 | evasion | signal two: typos raise word variety | 200 | unsure | 0.498 | HELD |
+| EV02 | evasion | signal two: broken-up sentences raise length spread | 200 | unsure | 0.507 | HELD |
+| EV03 | evasion | signal two: a pasted quotation changes the shape | 200 | unsure | 0.565 | HELD |
+| EV04 | evasion | signal one: unusual words raise perplexity | 200 | unsure | 0.611 | HELD |
+| EV05 | evasion | both signals: heavy human editing pass | 200 | human | 0.304 | BROKE |
+| EV06 | evasion | signal two: one very long sentence and one very short | 200 | unsure | 0.474 | HELD |
+| EV07 | evasion | signal two: padding with punctuation | 200 | unsure | 0.543 | HELD |
+| EV08 | evasion | signal one: text below the token window | 200 | unsure | 0.373 | HELD |
+| EV09 | evasion | both: AI text with a human opening paragraph bolted on | 200 | unsure | 0.555 | HELD |
+| EV10 | evasion | signal two: repeated stanza structure | 200 | ai | 0.714 | HELD |
+| FP01 | false_positive | plain, clear human writing with no flourishes | 200 | unsure | 0.508 | HELD |
+| FP02 | false_positive | human writing in a formal register | 200 | unsure | 0.522 | HELD |
+| FP03 | false_positive | a non-native English speaker writing carefully | 200 | unsure | 0.592 | HELD |
+| FP04 | false_positive | a student essay written to a rubric | 200 | unsure | 0.508 | HELD |
+| FP05 | false_positive | technical documentation written by a person | 200 | unsure | 0.646 | HELD |
+| FP06 | false_positive | a person imitating a formal template | 200 | unsure | 0.586 | HELD |
+| FP07 | false_positive | human writing that repeats a phrase deliberately | 200 | unsure | 0.552 | HELD |
+| FP08 | false_positive | very short genuine human submission | 200 | unsure | 0.411 | HELD |
+| PI01 | prompt_injection | instruction to ignore the check | 200 | unsure | 0.537 | HELD |
+| PI02 | prompt_injection | instruction disguised as a system message | 200 | human | 0.324 | BROKE |
+| PI03 | prompt_injection | instruction wrapped in the writer's voice | 200 | unsure | 0.594 | HELD |
+| PI04 | prompt_injection | attempt to make the label text hostile | 200 | unsure | 0.423 | HELD |
+| PI05 | prompt_injection | attempt to inject into the audit log | 200 | unsure | 0.570 | HELD |
+| PI06 | prompt_injection | instruction plus real human text | 200 | unsure | 0.491 | HELD |
+| MF01 | malformed | text is only whitespace | 400 | — | — | HELD |
+| MF02 | malformed | text is a single character | 400 | — | — | HELD |
+| MF03 | malformed | text is control characters | 200 | human | 0.250 | BROKE |
+| MF04 | malformed | text is only punctuation | 200 | human | 0.256 | BROKE |
+| MF05 | malformed | text is a very long single word | 200 | ai | 0.749 | BROKE |
+| MF06 | malformed | text is emoji only | 200 | ai | 0.749 | BROKE |
+| MF07 | malformed | text is right-to-left script | 200 | ai | 0.703 | BROKE |
+| MF08 | malformed | text is 60,000 characters | 400 | — | — | HELD |
+| RQ01 | malformed | no text field at all | 400 | — | — | HELD |
+| RQ02 | malformed | no creator_id | 200 | unsure | 0.370 | HELD |
+| RQ03 | malformed | text is a number | 400 | — | — | HELD |
+| RQ04 | malformed | text is a list | 400 | — | — | HELD |
+| RQ05 | malformed | text is null | 400 | — | — | HELD |
+| RQ06 | malformed | creator_id is an object | 400 | — | — | HELD |
+| RQ07 | malformed | body is a JSON array, not an object | 400 | — | — | HELD |
+| RQ08 | malformed | body is unparseable JSON | 400 | — | — | HELD |
+| RQ09 | malformed | body is empty | 400 | — | — | HELD |
+| RQ10 * | malformed | body is form-encoded, not JSON | 400 | — | — | HELD |
+| RQ11 * | malformed | body is JSON claiming to be plain text | 400 | — | — | HELD |
+| RQ12 | malformed | deeply nested JSON | 400 | — | — | HELD |
+| FL01_01 | flood_same_creator | 20 rapid submissions from one creator | 200 | human | 0.264 | HELD |
+| FL01_02 | flood_same_creator | 20 rapid submissions from one creator | 200 | human | 0.264 | HELD |
+| FL01_03 | flood_same_creator | 20 rapid submissions from one creator | 200 | human | 0.264 | HELD |
+| FL01_04 | flood_same_creator | 20 rapid submissions from one creator | 200 | human | 0.264 | HELD |
+| FL01_05 | flood_same_creator | 20 rapid submissions from one creator | 200 | human | 0.264 | HELD |
+| FL01_06 | flood_same_creator | 20 rapid submissions from one creator | 429 | — | — | HELD |
+| FL01_07 | flood_same_creator | 20 rapid submissions from one creator | 429 | — | — | HELD |
+| FL01_08 | flood_same_creator | 20 rapid submissions from one creator | 429 | — | — | HELD |
+| FL01_09 | flood_same_creator | 20 rapid submissions from one creator | 429 | — | — | HELD |
+| FL01_10 | flood_same_creator | 20 rapid submissions from one creator | 429 | — | — | HELD |
+| FL01_11 | flood_same_creator | 20 rapid submissions from one creator | 429 | — | — | HELD |
+| FL01_12 | flood_same_creator | 20 rapid submissions from one creator | 429 | — | — | HELD |
+
+\* RQ10 and RQ11 were rate-limited in the full run, so I re-ran each one alone: `results/attack_run_2026-11-15_1530_after_RQ10.md` and `..._RQ11.md`. They were never reached in the before run, so they have no before result.
 
 | | Before | After |
 |---|---|---|
-| HELD | 43 | 47 |
+| HELD | 43 | 49 |
 | BROKE | 11 | 7 |
-| UNTESTED | 2 | 2 |
+| UNTESTED | 2 | 0 |
 
 The eval run after the change: `results/run_2026-11-15_1427_after.md`.
 
@@ -750,6 +872,7 @@ The eval run after the change: `results/run_2026-11-15_1427_after.md`.
 
 Yes, for what it targeted:
 - Attacks: MF02, MF08, RQ06 and RQ07 moved from BROKE to HELD, each now a clean 400. No attack got worse, and the service no longer crashes on any attack.
+- RQ10 and RQ11: re-run alone, both got a clean 400, so every one of the 56 attacks now has an outcome.
 - Criterion 5: 3 of 4 bad inputs got a 400 before, 4 of 4 after, in all three trials.
 - Criterion 4: I ran the appeal test separately again (it isn't part of `run_eval.py`). 10 of 10 real appeals and 3 of 3 bad appeals passed in each of 3 trials, the same as before.
 - Criteria 1, 2 and 3: every score is exactly the same as before (criterion 2 is still a gap of 0.08: 0.541 against 0.463), because the checks only run before the signals and never change how text is scored.
@@ -776,10 +899,6 @@ The failures that are left come from the signals, not the route, so this change 
 **Small changes move signal one: PI02, EV05.**
 - What I'd do: for PI02, score the text in parts (for example, each paragraph) and use the most AI-like part, so one strange line can't hide the rest. EV05 I'd probably leave: after a heavy human edit, the text is arguably human writing.
 - Why I stopped: scoring in parts changes how every text is scored, and short human texts with one AI-like paragraph could start getting the AI label. That's the opposite of what my design protects.
-
-**RQ10 and RQ11 are still untested.**
-- What I'd do: run them alone, after the rate limit resets, so they reach the route. Longer term, rate-limit requests without a creator_id separately from the address bucket.
-- Why I stopped: it's a test-setup problem, not a fix to the service, and both bodies should already get a 400 (neither is a JSON object with text).
 
 **The trade I'd make if this ran for real:**
 

@@ -4,6 +4,7 @@
 - Service: `app.py::submit`
 - 56 attacks · 2026-11-15 14:27
 - Auto-marked BROKE (5xx, crash, no response): **0**
+- RQ10 and RQ11 were rate-limited in this run (UNTESTED). Re-run alone afterwards: both returned 400 (HELD). See `attack_run_2026-11-15_1530_after_RQ10.md` and `attack_run_2026-11-15_1530_after_RQ11.md`.
 - Left for you to judge: **56**
 
 The Verdict column is blank where a script can't honestly decide. Whether
