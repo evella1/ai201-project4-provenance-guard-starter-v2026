@@ -412,7 +412,7 @@ Each attack's verdict is in the Verdict column of `results/attack_run_2026-11-15
 
 - False positives: 0 of 8 got the AI label, so criterion 1 held on this run. But it is fragile: FP02–FP07 all had model scores of 0.74–0.88, and only the style signal kept them out of AI. FP05 missed the AI label by 0.004.
 - Evasion: only EV05 (a heavy human editing pass) got the human label. The other evasions landed in unsure, which my design accepts. EV05's text reads like real human writing after the edit, so this is partly a question of when edited AI stops being AI.
-- Prompt injection: no instruction was "obeyed", because nothing in my service reads instructions. But PI02's fake SYSTEM line made the text less predictable, which dropped the model score from about 0.98 (the same AI text in EV10) to 0.20, and the text got the human label. The label and log stayed clean for PI04 and PI05: the label is always my own fixed text, and the submitted text is never logged.
+- Prompt injection: no instruction was "obeyed", because nothing in my service reads instructions. But PI02's fake SYSTEM line made the text less predictable: the AI paragraph alone scores 0.75 on the model signal, with the line in front it scores 0.20, and the text got the human label. The label and log stayed clean for PI04 and PI05: the label is always my own fixed text, and the submitted text is never logged.
 - Malformed text: the biggest group of failures. Text that is not English writing (emoji, one repeated letter, Arabic) gets a confident AI label, and control characters or punctuation get a human label. The 57,640-character text was accepted although my endpoint description promises a 400 above 20,000 characters.
 - Crashes: a single character (MF02) and a JSON array body (RQ07) crashed the service with a 500. Both crash pages showed the debugger, because debug mode is on.
 - Rate limiting: the flood was stopped after 5 submissions, and every block was logged. RQ10 and RQ11 were rate-limited before the route ran, so they still need to be re-run.
@@ -499,17 +499,162 @@ MF07: a text written in Arabic got the high-confidence AI label (combined 0.70, 
 
 | Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
 |---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |
+| 1. My own writing | At most 1 of 10 labelled AI | 0 of 10 | 0 of 10 | 0 of 10 | MET |
+| 2. AI vs human scores | AI average at least 0.3 above human average | gap 0.08 | gap 0.08 | gap 0.08 | MISSED |
+| 3. Label coverage | human, unsure and ai each reached | all 3 | all 3 | all 3 | MET |
+| 4. Appeals | 10 of 10 real appeals work; bad appeals get 400 or 404 and aren't logged | 10 of 10, bad 3 of 3 | 10 of 10, bad 3 of 3 | 10 of 10, bad 3 of 3 | MET |
+| 5. Bad input | Empty, missing, null and over 20,000 characters each get 400 | 3 of 4 | 3 of 4 | 3 of 4 | MISSED |
+
+All three trials gave exactly the same scores: GPT-2 scores the same text the same way every time. Criteria 1, 2, 3 and 5 were run with `run_eval.py`. `run_eval.py` did not run criterion 4: an appeal needs a content_id from an earlier submission, and run_eval can only send texts or fixed request bodies. I ran criterion 4 separately against the running service (see below).
 
 **Real output from one trial**, pasted as text, naming the file and function
 that produced it:
 
-```json
+Produced by `run_eval.py::main`, sending requests to `app.py::submit` (scores from `scoring.py::combine_signals`). Trial 1 of `results/run_2026-11-15_1344_before.md`, which has the full output of all three trials.
 
+Criterion 1, my text that came closest to the AI label:
+
+```json
+{
+  "status": 200,
+  "guess": "unsure",
+  "confidence": 0.6139,
+  "model_score": 0.7457,
+  "style_score": 0.482,
+  "label": "We can't tell whether this was written by a person or with AI help. Parts of it read like both. This is not an accusation. If you wrote it yourself, you can tell us by appealing with your content ID.",
+  "sent": "I apologize for the delayed answer. Thank you for reaching out to me a"
+}
+```
+
+Criterion 2, the lowest-scoring AI text and the highest-scoring human text:
+
+```json
+[
+  {
+    "status": 200,
+    "guess": "unsure",
+    "confidence": 0.3586,
+    "model_score": 0.6556,
+    "style_score": 0.0616,
+    "label": "We can't tell whether this was written by a person or with AI help. Parts of it read like both. This is not an accusation. If you wrote it yourself, you can tell us by appealing with your content ID.",
+    "sent": "For thirty-one years, Mara Okonkwo kept the light on Gull Point. When "
+  },
+  {
+    "status": 200,
+    "guess": "unsure",
+    "confidence": 0.6139,
+    "model_score": 0.7457,
+    "style_score": 0.482,
+    "label": "We can't tell whether this was written by a person or with AI help. Parts of it read like both. This is not an accusation. If you wrote it yourself, you can tell us by appealing with your content ID.",
+    "sent": "I apologize for the delayed answer. Thank you for reaching out to me a"
+  }
+]
+```
+
+Criterion 3, all three labels:
+
+```json
+[
+  {
+    "status": 200,
+    "guess": "ai",
+    "confidence": 0.7561,
+    "model_score": 0.7969,
+    "style_score": 0.7561,
+    "label": "This text has patterns we often see in AI-generated writing. This is a guess, not proof, and we can be wrong. If you wrote it yourself, you can appeal using your content ID and a person will review it.",
+    "sent": "Time management is an essential skill that plays a crucial role in bot"
+  },
+  {
+    "status": 200,
+    "guess": "human",
+    "confidence": 0.2261,
+    "model_score": 0.3198,
+    "style_score": 0.1324,
+    "label": "We think this was probably written by a person.",
+    "sent": "Took a ride to Wat Takien today. Great little find! For all those \"aut"
+  },
+  {
+    "status": 200,
+    "guess": "unsure",
+    "confidence": 0.5322,
+    "model_score": 0.8288,
+    "style_score": 0.5322,
+    "label": "We can't tell whether this was written by a person or with AI help. Parts of it read like both. This is not an accusation. If you wrote it yourself, you can tell us by appealing with your content ID.",
+    "sent": "Today, I went to see my friend at a coffee shop. We ordered pastries a"
+  }
+]
+```
+
+Criterion 5, the four bad inputs:
+
+```json
+[
+  {
+    "status": 400,
+    "guess": null,
+    "confidence": null,
+    "model_score": null,
+    "style_score": null,
+    "label": null,
+    "sent": "(empty text)"
+  },
+  {
+    "status": 400,
+    "guess": null,
+    "confidence": null,
+    "model_score": null,
+    "style_score": null,
+    "label": null,
+    "sent": "{\"creator_id\": \"eval_bad_missing\"}"
+  },
+  {
+    "status": 400,
+    "guess": null,
+    "confidence": null,
+    "model_score": null,
+    "style_score": null,
+    "label": null,
+    "sent": "{\"text\": null, \"creator_id\": \"eval_bad_null\"}"
+  },
+  {
+    "status": 200,
+    "guess": "ai",
+    "confidence": 0.7488,
+    "model_score": 0.9975,
+    "style_score": 0.5,
+    "label": "This text has patterns we often see in AI-generated writing. This is a guess, not proof, and we can be wrong. If you wrote it yourself, you can appeal using your content ID and a person will review it.",
+    "sent": "word word word word word word word word word word word word word word "
+  }
+]
+```
+
+Criterion 4, run separately (not by `run_eval.py`): requests sent to `app.py::appeal`, decisions read back from `logs/audit.jsonl` (written by `audit.py::log_decision` and `audit.py::log_appeal`). Trial 1:
+
+A real appeal, response (HTTP 200):
+
+```json
+{
+  "content_id": "c_8d449a42e6ae",
+  "message": "Thanks, we've received your appeal. A person will review this decision; the original result is on hold until then.",
+  "status": "under_review"
+}
+```
+
+The log for that content_id afterwards, original decision then appeal:
+
+```json
+[
+  {"timestamp": "2026-11-15T22:03:24+00:00", "content_id": "c_8d449a42e6ae", "creator_id": "appeal_t1_1", "guess": "unsure", "model_score": 0.8288, "style_score": 0.5322, "combined_score": 0.5322, "label": "We can't tell whether this was written by a person or with AI help. Parts of it read like both. This is not an accusation. If you wrote it yourself, you can tell us by appealing with your content ID.", "status": "decided"},
+  {"timestamp": "2026-11-15T22:03:24+00:00", "content_id": "c_8d449a42e6ae", "creator_id": "appeal_t1_1", "event": "appeal", "status": "under_review", "reasoning": "I wrote this myself."}
+]
+```
+
+Bad appeals: made-up content_id (HTTP 404), then empty and missing content_id (HTTP 400 each):
+
+```json
+{"error": "not_found", "message": "We couldn't find a submission with content ID c_000000000000. Please check the ID from your original result."}
+{"error": "bad_request", "message": "Send JSON with a non-empty \"content_id\"."}
+{"error": "bad_request", "message": "Send JSON with a non-empty \"content_id\"."}
 ```
 
 **Diagnoses**
@@ -528,6 +673,34 @@ that produced it:
 
      Look for a pattern. Five failures on one signal is one problem, not five. -->
 
+The misses and broken attacks come down to four problems.
+
+**1. The route doesn't check its input.** Stage: the route (`app.py::submit`).
+Covers: criterion 5, MF08, MF02, RQ07, RQ06.
+- Criterion 5 and MF08: the route never checks the 20,000-character limit my endpoint description promises, so the 25,000- and 57,640-character texts went to the signals and got the AI label. Both texts repeat the same words or paragraph, and repeated text is very predictable for GPT-2 (model 0.99).
+- MF02: a single character is fewer than 3 tokens, so `detector.model_signal` raises an error. The route doesn't catch it, so the service crashed with a 500.
+- RQ07: a JSON array is not an object. `request.get_json() or {}` keeps the array (a non-empty list counts as true), and calling `.get` on it crashed the route.
+- RQ06: creator_id is never checked to be a string, so an object went straight into the log.
+- The two crashes left no log entry, because the route failed before `audit.log_decision`.
+
+**2. Text that isn't English writing gets a confident label.** Stages: signal one, signal two and the combining rule.
+Covers: MF05, MF06, MF07 (labelled AI) and MF03, MF04 (labelled human).
+- Signal two only counts English words (`[a-z0-9']`). Emoji, Arabic and one long repeated letter give it 0 or 1 words, so its short-text guard returns 0.5 ("can't tell").
+- My combining rule only uses the lower score when both signals are *above* 0.5. A style score of exactly 0.5 isn't, so the rule takes the plain average, and the model signal alone decides.
+- Signal one: GPT-2 splits emoji and Arabic letters into several byte pieces, and the later pieces are easy to guess, so the text looks very predictable (0.91 to 1.00). Average with 0.5 gives about 0.70 to 0.75, which is AI. Control characters and punctuation are the opposite: very unpredictable (model 0.00 to 0.01), so the average is about 0.25, which is human.
+- MF07 (Arabic) is a real writer falsely accused, the worst outcome of the run.
+
+**3. Signal one can't tell plain human writing from AI writing.** Stage: signal one, which the combining rule only partly offsets.
+Covers: criterion 2 (missed), and why criterion 1 only just held.
+- Signal one scores how predictable the words are. Plain and formal writing uses common phrases ("I apologize for the delayed answer", "Hope you are doing well"), which are easy to predict. On the criterion 2 texts, signal one averaged 0.64 for AI and 0.66 for human, so it can't separate them at all. Signal two did a little better (0.48 against 0.33), but averaged together the gap is only 0.08.
+- Four of the five human texts are mine, and English is my second language. I think that makes them more predictable: I stick to words and phrases I'm sure of. The human text not written by me, the forum post, scored lowest (0.23). The attack set shows the same pattern: the non-native speaker text (FP03) had a model score of 0.81.
+- On the AI side, only the two essay-style texts reached the AI label. The casual review, the travel answer and the story are written in a natural, varied way, so both signals read them as fairly human (the story got 0.06 on signal two because of its dialogue, quote marks and mix of short and long sentences).
+- Criterion 1 held because of the combining rule: 8 of my 10 texts scored 0.60 or more on signal one, and only signal two or the "both must agree" rule kept them out of the AI label. My internship email reached 0.61, with the AI line at 0.65.
+
+**4. Small changes move signal one a lot.** Stage: signal one, then the combining rule.
+Covers: PI02, EV05.
+- PI02: nothing in my service reads instructions, so the instruction itself did nothing. But the fake SYSTEM line is very unusual text. GPT-2 averages its surprise over the whole text, and the text is short (45 words), so one odd line dropped the model score from 0.75 (the AI paragraph alone) to 0.20. With style 0.44, the average was 0.32, which is human.
+- EV05: a heavy human edit added fragments ("Obviously."), a dash and uneven sentences. That changes exactly what both signals measure, so both moved to the human side (model 0.32, style 0.29). Once the edit is this heavy, the text is arguably human writing.
 
 ---
 
