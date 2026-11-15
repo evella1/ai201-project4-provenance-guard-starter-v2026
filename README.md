@@ -706,20 +706,51 @@ Covers: PI02, EV05.
 
 ## The Improvement
 
-**What I changed:**
+**What I changed:** I added input validation to `app.py::submit`, so the input is checked before the signals see it. One improvement, four checks:
 
-**Which diagnosis pointed at it:**
+1. The body must be a JSON object. Otherwise: 400 `bad_request`.
+2. `creator_id` must be a non-empty string (a missing one still becomes "unknown", as my endpoint description says). Otherwise: 400 `bad_request`.
+3. Text over 20,000 characters: 400 `text_too_long`. The limit is `MAX_TEXT_CHARS` in config.py.
+4. Text too short to score (the detector needs at least 3 tokens): 400 `text_too_short`, instead of a crash.
+
+**Which diagnosis pointed at it:** All four checks come from what I observed in the first ("before") runs: the attack run (`results/attack_run_2026-11-15_0024.md`) and the eval run (`results/run_2026-11-15_1344_before.md`). I didn't add anything those runs didn't show. Diagnosis 1, "The route doesn't check its input". It covered the criterion 5 miss and four broken attacks: MF08 (60,000 characters), MF02 (single character, crash), RQ07 (JSON array, crash) and RQ06 (creator_id as an object). Each check fixes one of them.
 
 ### Attack Run — After
 
 <!-- Same format. `run_attacks.py --label after` -->
 
+Run: `results/attack_run_2026-11-15_1427_after.md` (same 56 attacks, same rules for HELD and BROKE). Each attack's verdict is in its Verdict column.
+
+| | Before | After |
+|---|---|---|
+| HELD | 43 | 47 |
+| BROKE | 11 | 7 |
+| UNTESTED | 2 | 2 |
+
+The eval run after the change: `results/run_2026-11-15_1427_after.md`.
+
+| Criterion | Before | After |
+|---|---|---|
+| 1. My own writing | MET | MET |
+| 2. AI vs human scores | MISSED | MISSED |
+| 3. Label coverage | MET | MET |
+| 4. Appeals | MET | MET |
+| 5. Bad input | MISSED | MET |
 
 **Did it help, and how do I know:**
 
 <!-- Widening the unsure band usually fixes one problem and creates another.
      Reporting that trade honestly is worth full credit. -->
 
+Yes, for what it targeted:
+- Attacks: MF02, MF08, RQ06 and RQ07 moved from BROKE to HELD, each now a clean 400. No attack got worse, and the service no longer crashes on any attack.
+- Criterion 5: 3 of 4 bad inputs got a 400 before, 4 of 4 after, in all three trials.
+- Criterion 4: I ran the appeal test separately again (it isn't part of `run_eval.py`). 10 of 10 real appeals and 3 of 3 bad appeals passed in each of 3 trials, the same as before.
+- Criteria 1, 2 and 3: every score is exactly the same as before (criterion 2 is still a gap of 0.08: 0.541 against 0.463), because the checks only run before the signals and never change how text is scored.
+
+What it costs: a real writer with a text over 20,000 characters is now turned away instead of checked, and a very short message (a word or two) gets an error instead of a label. A missing creator_id is still accepted, but an empty one is now rejected.
+
+The failures that are left come from the signals, not the route, so this change couldn't reach them. They are in "What's Still Broken".
 
 ---
 
@@ -728,12 +759,28 @@ Covers: PI02, EV05.
 <!-- For each attack still getting through and each criterion still missed:
      what you'd do, and why you stopped. -->
 
+**Text that isn't English writing gets a confident label: MF03, MF04, MF05, MF06, MF07.** Still the worst problem: the Arabic text (MF07) is a real writer labelled AI.
+- What I'd do: count how much of the text is English words before scoring. If there are too few, return unsure ("we can't check this kind of text") instead of a score. A second, simpler fix: make the combining rule never return AI when the style signal had nothing to measure (exactly 0.5).
+- Why I stopped: I'd have to choose what counts as "enough English", and a wrong cut-off would push real English writers with names, numbers or code into unsure. I wanted one clean improvement I could prove with the runs, and this needs its own testing on non-English and mixed-language text.
+
+**Criterion 2 is missed (gap 0.08, target 0.3).**
+- What I'd do: signal one can't separate my AI and human texts at all (0.64 against 0.66), so reweighting won't close the gap; even all weight on signal two would give about 0.15. It needs a better first signal, for example a larger or newer model than GPT-2, or a model trained to tell AI from human writing instead of just measuring predictability. I'd also test with more than five texts per group, and with more human writers than just me.
+- Why I stopped: replacing the model is a much bigger change than this unit allows, and it would need the whole calibration redone. I kept the target at 0.3, because the rules say a missed target stays.
+
+**Small changes move signal one: PI02, EV05.**
+- What I'd do: for PI02, score the text in parts (for example, each paragraph) and use the most AI-like part, so one strange line can't hide the rest. EV05 I'd probably leave: after a heavy human edit, the text is arguably human writing.
+- Why I stopped: scoring in parts changes how every text is scored, and short human texts with one AI-like paragraph could start getting the AI label. That's the opposite of what my design protects.
+
+**RQ10 and RQ11 are still untested.**
+- What I'd do: run them alone, after the rate limit resets, so they reach the route. Longer term, rate-limit requests without a creator_id separately from the address bucket.
+- Why I stopped: it's a test-setup problem, not a fix to the service, and both bodies should already get a 400 (neither is a JSON object with text).
 
 **The trade I'd make if this ran for real:**
 
 <!-- Two sentences. Fewer wrong accusations means more AI text getting through.
      Say which way you'd go and WHO PAYS FOR IT. -->
 
+I'd keep making the AI label hard to reach, so fewer honest writers get accused, even though more AI text gets through as unsure. The people who pay for it are teachers and site owners, who get fewer confident answers and have to judge more unsure cases themselves, instead of writers like me who wrote every word in their second language.
 
 <!-- ═════════════════════════════════════════════════════════════════════
 
