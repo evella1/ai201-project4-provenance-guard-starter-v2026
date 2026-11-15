@@ -25,7 +25,7 @@ Labels: human below 0.35, unsure 0.35–0.65, AI above 0.65 (config.py).
 | # | Text | Spread | Variety | Punct. | Style | Model | Combined | Label |
 |---|---|---|---|---|---|---|---|---|
 | 1 | Clearly AI | 0.26 | 0.92 | 0.50 | 0.76 | 0.80 | 0.76 | AI |
-| 2 | Clearly human (forum) | 0.51 | 0.80 | 0.00 | 0.13 | 0.32 | 0.22 | human |
+| 2 | Clearly human (forum) | 0.51 | 0.80 | 0.00 | 0.13 | 0.32 | 0.23 | human |
 | 3 | AI pretending to be human | 0.73 | 0.89 | 0.33 | 0.35 | 0.40 | 0.37 | unsure |
 | 4 | Lightly-edited AI | 0.35 | 0.92 | 0.50 | 0.69 | 0.75 | 0.69 | AI |
 | 5 | Plain human (my own) | 0.39 | 0.87 | 0.50 | 0.53 | 0.83 | 0.53 | unsure |

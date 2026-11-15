@@ -96,7 +96,6 @@ What comes out when something goes wrong:
 Appealing the same content_id more than once is allowed. Each appeal is recorded in the log, and the status stays "under_review". The original decision is never changed or deleted. The appeal is added after it in the log.
 
 
-
 ---
 
 ## Signals and Scoring
@@ -123,17 +122,20 @@ Appealing the same content_id more than once is allowed. Each appeal is recorded
 
 **What it can't see:** what the text means. A detector only looks at the shape of the writing, so anything that changes the style moves the score. Adding typos, splitting long sentences into short ones, putting in a quotation, or adding a question mark can make AI text look human, and these are easy to do on purpose. It can also wrongly flag a person who naturally writes in a steady, tidy way, with sentences of the same length and plain punctuation.
 
-**What I found when testing it:** I tested three texts: a formal AI essay, a casual restaurant review that I asked an AI to write so it sounds like a person, and a real forum post from 15 years ago.
+**What I found when testing it:** I tested five texts: a formal AI essay, the same essay lightly edited by hand, a casual restaurant review that I asked an AI to write so it sounds like a person, a real forum post from 15 years ago, and my own plain writing. All five texts and their scores are in `samples/calibration.md`.
 
-| Measure | AI essay | AI pretending to be human | Real human (forum) |
-|---|---|---|---|
-| sentence length spread (higher = more human) | 0.26 | 0.73 | 0.51 |
-| word variety (higher = more AI) | 0.92 | 0.89 | 0.80 |
-| punctuation sameness (higher = more AI) | 0.50 | 0.33 | 0.00 |
+| Measure | AI essay | Lightly-edited AI | AI pretending to be human | Real human (forum) | Plain human (mine) |
+|---|---|---|---|---|---|
+| sentence length spread (higher = more human) | 0.26 | 0.35 | 0.73 | 0.51 | 0.39 |
+| word variety (higher = more AI) | 0.92 | 0.92 | 0.89 | 0.80 | 0.87 |
+| punctuation sameness (higher = more AI) | 0.50 | 0.50 | 0.33 | 0.00 | 0.50 |
+| style signal (higher = more AI) | 0.76 | 0.69 | 0.35 | 0.13 | 0.53 |
 
-The fake casual review fooled the sentence measure. It has uneven sentences and short fragments like "honestly?", so it scored *more* human than the real human. The attacker doesn't even need to edit the text by hand. Asking the AI to "sound casual" is enough, because the style is exactly what it copies. On the other two measures it landed between the AI essay and the real human, so the style signal will probably call it unsure, not AI.
+The fake casual review fooled the sentence measure. It has uneven sentences and short fragments like "honestly?", so it scored *more* human than the real human. The attacker doesn't even need to edit the text by hand. Asking the AI to "sound casual" is enough, because the style is exactly what it copies. On the other two measures it landed between the AI essay and the real human, and the style signal gave it 0.35, on the human side.
 
-Word variety worked the opposite way from what I expected. I thought AI would repeat words more, but both AI texts used a wider vocabulary than the human. So I count a higher value as more AI.
+The lightly-edited AI and my own plain writing look almost the same to this signal. The style signal can tell the forum post from the AI essay, but not plain human writing from edited AI.
+
+Word variety worked the opposite way from what I expected. I thought AI would repeat words more, but all three AI texts used a wider vocabulary than both human texts. So I count a higher value as more AI.
 
 I also dropped three ideas after testing:
 - A list of typical AI words ("delve", "crucial", "moreover"). It found only 2 of 110 words in a clear AI essay, it is easy to avoid, and formal or non-native writers use many of these words too, so it would push my false positive (below) toward AI.
@@ -173,7 +175,7 @@ The trade: making it harder to reach the AI label means some real AI text will b
 **The numbers:** All of these are in config.py.
 - "Both lean AI" cut-off: `BOTH_LEAN_AI = 0.5`
 - Weights for the average: `WEIGHT_MODEL_SIGNAL = 0.5`, `WEIGHT_STYLE_SIGNAL = 0.5`. Equal, because with five test texts I have no evidence that one signal deserves more.
-- Label thresholds: `HUMAN_THRESHOLD = 0.35`, `AI_THRESHOLD = 0.65`. Below 0.35 is human, above 0.65 is AI, in between is unsure.
+- Label thresholds: `HUMAN_THRESHOLD = 0.35`, `AI_THRESHOLD = 0.65`. 0.35 or below is human, 0.65 or above is AI, in between is unsure.
 
 I tested five texts:
 
@@ -183,7 +185,7 @@ I tested five texts:
 | Lightly-edited AI | 0.75 | 0.69 | 0.72 | 0.69 | AI |
 | Plain human (my own writing) | 0.83 | 0.53 | 0.68 (AI ✗) | 0.53 | unsure |
 | AI pretending to be human | 0.40 | 0.35 | 0.37 | 0.37 | unsure |
-| Clearly human (forum post) | 0.32 | 0.13 | 0.22 | 0.22 | human |
+| Clearly human (forum post) | 0.32 | 0.13 | 0.23 | 0.23 | human |
 
 **Where it lives:** `scoring.py::combine_signals`
 
@@ -193,7 +195,6 @@ I tested five texts:
 **A case where my two signals split, and what my rule does with it:** My own plain writing about meeting a friend at a coffee shop. The model signal gave it 0.83, the most AI-like score of all five texts, even higher than the real AI essay. That is because short sentences and everyday words are easy for GPT-2 to predict. The style signal gave it only 0.53. A plain average would be 0.68, which is labelled AI, so the system would accuse me of using AI for my own writing. My rule takes the lower score, 0.53, so it is labelled unsure. The real AI texts still reach AI, because both signals are high on them.
 
 The weak spot: the edited AI only just reaches AI (style 0.69, line at 0.65). A slightly heavier edit would drop it to unsure. That is the trade I chose: I'd rather let some AI through as unsure than accuse a person.
-
 
 
 ---
@@ -219,7 +220,6 @@ The ranges come from `HUMAN_THRESHOLD` and `AI_THRESHOLD` in config.py (`scoring
      written every word themselves. -->
 
 My own plain writing landed on unsure, so I wrote this label for a person like me: someone who wrote every word and is now being told the system isn't sure. It says plainly that the system can't tell, and "parts of it read like both" explains why without blaming the writer. "This is not an accusation" is there because that is the first thing an honest writer would worry about. It ends with what they can do: appeal with their content ID. The AI label also says it is "a guess, not proof", because even my AI label can be wrong, and my own writing scored higher than real AI on one signal.
-
 
 
 ---
@@ -328,7 +328,7 @@ curl.exe "http://127.0.0.1:5000/log?limit=2"
 
 ## Rate Limiting
 
-**My limits:** 5 per minute, 59 per day
+**My limits:** 5 per minute, 50 per day (`RATE_LIMIT_PER_MINUTE` and `RATE_LIMIT_PER_DAY` in config.py)
 
 **Why those numbers and not others:**
 <!-- Think about two people: a real writer submitting their own work a few
@@ -342,10 +342,13 @@ A writer revising their own work might resubmit several times in a couple of min
 differently — one script can look like a thousand callers, and one household
 can look like one. -->
 
+Per creator_id. If a request has no usable creator_id (it's missing, not a string, or the body isn't a JSON object), it counts against the caller's address instead (`app.py::rate_limit_key`). The weakness: one script can rotate creator_ids and look like many writers. The attack run also showed the other side: several requests without a creator_id shared one address and used up its limit together.
+
 **The run of status codes when I pushed past it:**
 
 <!-- python run_attacks.py --flood 15 -->
 
+```
 15 submissions as 'flood_tester' against http://127.0.0.1:5000
 The first one is slow while the model loads.
 
@@ -369,7 +372,8 @@ The first one is slow while the model loads.
 200 200 200 200 200 429 429 429 429 429 429 429 429 429 429
 ============================================================
 
-10 of 15 were rate limited. Paste the run above into your README
+10 of 15 were rate limited.
+```
 
 ---
 
@@ -378,20 +382,114 @@ The first one is slow while the model loads.
 <!-- Every attack with its outcome and a held-or-broke mark.
      `run_attacks.py --label before` produces the table. -->
 
+Run: `results/attack_run_2026-11-15_0024.md` (56 attacks, produced by `run_attacks.py::main`).
+
+**How I decide HELD or BROKE**
+
+HELD and BROKE are about my service, not about the scores. BROKE means the attack got what it wanted, or my service did something harmful or broke its own promises. HELD means the service handled it acceptably.
+
+Rules for every attack:
+- A 500 (crash) is always BROKE.
+- A clean 400 for bad input is HELD.
+- Anything that breaks a promise in my endpoint description (for example, the 20,000 character limit, or creator_id being a string) is BROKE.
+
+Rules for each family:
+
+| Family | HELD | BROKE | Why |
+|---|---|---|---|
+| False positive (real human writing) | human or unsure | ai | Criterion 1: a real writer must not get the AI label. Unsure is acceptable because the label says it is not an accusation and offers an appeal. |
+| Evasion (AI text with tricks) | ai or unsure | human | The attacker wants a "probably a person" label. My design accepts AI landing in unsure (see "The trade" above), because unsure never clears the text, it says "we can't tell". |
+| Prompt injection | the instruction changes nothing: label is not human, and the label and log contain only my own text | the result is what the instruction asked for (human), or anything injected shows up in the label or log | The attacker wins if the text gets cleared or if they can write into my output. |
+| Malformed text that still got a 200 | unsure, or a clean 400 | ai or human | Emoji, punctuation or one repeated letter is not writing. The only honest answer is "can't tell" or a rejection. Claiming either way is wrong, and "ai" is a false accusation. |
+| Malformed request | clean 400, or accepted when my spec allows it | 500, or accepted when my spec says it should be rejected | My endpoint description is the promise. |
+| Flood | the limiter blocks after the limit, and each block is logged | requests keep getting through, or blocks leave no trace | Criterion: rate limiting with a trace. |
+
+If a request never reached the check it was meant to test (for example, it was rate-limited first), I mark it **UNTESTED** and re-run it, instead of calling it HELD.
+
+Each attack's verdict is in the Verdict column of `results/attack_run_2026-11-15_0024.md`.
+
+**What I found**
+
+- False positives: 0 of 8 got the AI label, so criterion 1 held on this run. But it is fragile: FP02–FP07 all had model scores of 0.74–0.88, and only the style signal kept them out of AI. FP05 missed the AI label by 0.004.
+- Evasion: only EV05 (a heavy human editing pass) got the human label. The other evasions landed in unsure, which my design accepts. EV05's text reads like real human writing after the edit, so this is partly a question of when edited AI stops being AI.
+- Prompt injection: no instruction was "obeyed", because nothing in my service reads instructions. But PI02's fake SYSTEM line made the text less predictable, which dropped the model score from about 0.98 (the same AI text in EV10) to 0.20, and the text got the human label. The label and log stayed clean for PI04 and PI05: the label is always my own fixed text, and the submitted text is never logged.
+- Malformed text: the biggest group of failures. Text that is not English writing (emoji, one repeated letter, Arabic) gets a confident AI label, and control characters or punctuation get a human label. The 57,640-character text was accepted although my endpoint description promises a 400 above 20,000 characters.
+- Crashes: a single character (MF02) and a JSON array body (RQ07) crashed the service with a 500. Both crash pages showed the debugger, because debug mode is on.
+- Rate limiting: the flood was stopped after 5 submissions, and every block was logged. RQ10 and RQ11 were rate-limited before the route ran, so they still need to be re-run.
 
 
 **Ten audit log entries from the run**
 
 <!-- Choose entries that show the interesting failures, not the ten easiest. -->
 
-```json
+The ten worst outcomes from the run, worst first. Each entry is copied from `logs/audit.jsonl`.
 
+1. MF07, Arabic text labelled AI. A real person writing in their own language is accused. GPT-2 was trained on English and splits each Arabic letter into several small pieces. After the first piece, the rest are easy to guess, so the whole text looks very predictable (model 0.91), and the style signal falls back to 0.5 because it can't count English words.
+
+```json
+{"timestamp": "2026-11-15T08:24:47+00:00", "content_id": "c_322285e017d7", "creator_id": "attacker_MF07", "guess": "ai", "model_score": 0.9064, "style_score": 0.5, "combined_score": 0.7032, "label": "This text has patterns we often see in AI-generated writing. This is a guess, not proof, and we can be wrong. If you wrote it yourself, you can appeal using your content ID and a person will review it.", "status": "decided"}
 ```
+
+2. FP05, human technical documentation. 0.646 is 0.004 below the AI label. Documentation is supposed to be plain and consistent, which is exactly what both signals read as AI.
+
+```json
+{"timestamp": "2026-11-15T08:24:45+00:00", "content_id": "c_cfae545d1260", "creator_id": "attacker_FP05", "guess": "unsure", "model_score": 0.8005, "style_score": 0.4915, "combined_score": 0.646, "label": "We can't tell whether this was written by a person or with AI help. Parts of it read like both. This is not an accusation. If you wrote it yourself, you can tell us by appealing with your content ID.", "status": "decided"}
+```
+
+3. FP03, a non-native speaker writing carefully. This is the writer my false-positive section is about. Model 0.81; only the "both must agree" rule kept it at unsure.
+
+```json
+{"timestamp": "2026-11-15T08:24:45+00:00", "content_id": "c_f8a71af5c423", "creator_id": "attacker_FP03", "guess": "unsure", "model_score": 0.8051, "style_score": 0.5919, "combined_score": 0.5919, "label": "We can't tell whether this was written by a person or with AI help. Parts of it read like both. This is not an accusation. If you wrote it yourself, you can tell us by appealing with your content ID.", "status": "decided"}
+```
+
+4. PI02, AI text with a fake SYSTEM line. The extra line made the text less predictable (model 0.20), so AI text got "probably written by a person".
+
+```json
+{"timestamp": "2026-11-15T08:24:46+00:00", "content_id": "c_5d9b704ac2a4", "creator_id": "attacker_PI02", "guess": "human", "model_score": 0.2044, "style_score": 0.4444, "combined_score": 0.3244, "label": "We think this was probably written by a person.", "status": "decided"}
+```
+
+5. EV05, AI text after a heavy human edit. Both signals moved to the human side, so the edit fully hid it.
+
+```json
+{"timestamp": "2026-11-15T08:24:44+00:00", "content_id": "c_03857725637c", "creator_id": "attacker_EV05", "guess": "human", "model_score": 0.3212, "style_score": 0.2875, "combined_score": 0.3044, "label": "We think this was probably written by a person.", "status": "decided"}
+```
+
+6. MF06, emoji only, labelled AI. Not writing at all, but the AI label tells the sender they used AI.
+
+```json
+{"timestamp": "2026-11-15T08:24:47+00:00", "content_id": "c_e4fea4f378a5", "creator_id": "attacker_MF06", "guess": "ai", "model_score": 0.9969, "style_score": 0.5, "combined_score": 0.7485, "label": "This text has patterns we often see in AI-generated writing. This is a guess, not proof, and we can be wrong. If you wrote it yourself, you can appeal using your content ID and a person will review it.", "status": "decided"}
+```
+
+7. MF05, one letter repeated 4,000 times, labelled AI. GPT-2 finds a repeated letter perfectly predictable (model 1.00).
+
+```json
+{"timestamp": "2026-11-15T08:24:47+00:00", "content_id": "c_bd779222bc4c", "creator_id": "attacker_MF05", "guess": "ai", "model_score": 0.9976, "style_score": 0.5, "combined_score": 0.7488, "label": "This text has patterns we often see in AI-generated writing. This is a guess, not proof, and we can be wrong. If you wrote it yourself, you can appeal using your content ID and a person will review it.", "status": "decided"}
+```
+
+8. MF08, 57,640 characters, labelled AI. My endpoint description promises a 400 above 20,000 characters, but the text was accepted. The detector only reads the first 400 tokens, so most of the text was never checked.
+
+```json
+{"timestamp": "2026-11-15T08:24:47+00:00", "content_id": "c_ad40e033715d", "creator_id": "attacker_MF08", "guess": "ai", "model_score": 0.9876, "style_score": 0.3738, "combined_score": 0.6807, "label": "This text has patterns we often see in AI-generated writing. This is a guess, not proof, and we can be wrong. If you wrote it yourself, you can appeal using your content ID and a person will review it.", "status": "decided"}
+```
+
+9. RQ06, creator_id sent as an object. It was saved into the log as an object, not a string, so the log no longer has one shape for this field, and a creator_id like this also falls back to the address-based rate limit.
+
+```json
+{"timestamp": "2026-11-15T08:24:48+00:00", "content_id": "c_e6b1374aa709", "creator_id": {"id": "x"}, "guess": "human", "model_score": 0.0492, "style_score": 0.5, "combined_score": 0.2746, "label": "We think this was probably written by a person.", "status": "decided"}
+```
+
+10. MF03, control characters labelled "probably written by a person". The system claims something about text that isn't writing.
+
+```json
+{"timestamp": "2026-11-15T08:24:46+00:00", "content_id": "c_d5057d3493e3", "creator_id": "attacker_MF03", "guess": "human", "model_score": 0.0, "style_score": 0.5, "combined_score": 0.25, "label": "We think this was probably written by a person.", "status": "decided"}
+```
+
+The two crashes (MF02, RQ07) are not in this list because they have no log entry at all: the service crashed before it reached `audit.log_decision`. A failure that leaves no trace is its own problem.
 
 **The single worst outcome** — the one I'd least want to explain to a writer
 whose work got caught by it:
 
-
+MF07: a text written in Arabic got the high-confidence AI label (combined 0.70, model 0.91, style 0.50). The writer did nothing wrong. They just wrote in their own language, and my system told them their work has "patterns we often see in AI-generated writing". The cause has nothing to do with AI: GPT-2 was trained on English, so it can't judge other languages, and my style signal only counts English words, so it gave up and returned 0.5. The "both must agree" rule didn't help: it only applies when both signals are above 0.5, and a style score of exactly 0.5 is not above it. So the rule used the plain average, and the model's 0.91 pulled the text over the AI line. Of all the failures, this is the one I'd least want to explain. It is a false accusation, and it hits the same group my false-positive section is about: people whose first language is not English.
 
 ---
 
@@ -431,7 +529,6 @@ that produced it:
      Look for a pattern. Five failures on one signal is one problem, not five. -->
 
 
-
 ---
 
 ## The Improvement
@@ -445,12 +542,10 @@ that produced it:
 <!-- Same format. `run_attacks.py --label after` -->
 
 
-
 **Did it help, and how do I know:**
 
 <!-- Widening the unsure band usually fixes one problem and creates another.
      Reporting that trade honestly is worth full credit. -->
-
 
 
 ---
@@ -461,12 +556,10 @@ that produced it:
      what you'd do, and why you stopped. -->
 
 
-
 **The trade I'd make if this ran for real:**
 
 <!-- Two sentences. Fewer wrong accusations means more AI text getting through.
      Say which way you'd go and WHO PAYS FOR IT. -->
-
 
 
 <!-- ═════════════════════════════════════════════════════════════════════
