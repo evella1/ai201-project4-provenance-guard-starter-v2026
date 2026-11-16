@@ -1,6 +1,77 @@
 # Running Provenance Guard
 
-Everything about how the starter works.
+## How I run it: local, with logs
+
+**My path: local, with logs.** The service runs on my own machine, and everything it does is written to an audit log I can read back. I chose this over hosting because the system doesn't fit a free host: torch (~200–800 MB) plus the GPT-2 weights (~550 MB, loaded into memory) are already over a free tier's 512 MB before the first request, and a free host has no lasting disk, so the 550 MB model would download again after every idle spin-down (see "This project will not fit a free host" below).
+
+### What the environment needs
+
+| Need | Details |
+|---|---|
+| Python | 3.11, 3.12 or 3.13 (not 3.14). I use 3.13. |
+| Memory | about 1.5 GB free (torch + GPT-2 loaded) |
+| Disk | about 1 GB for the packages and the GPT-2 download (cached after the first time) |
+| Internet | only the first time, to download GPT-2 |
+| Packages | everything in `requirements.txt` |
+
+### Exact start commands (Windows, PowerShell)
+
+First time only, in the project folder:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+python detector.py          # downloads GPT-2 (~550 MB) and scores a sample
+```
+
+Every time:
+
+```powershell
+.venv\Scripts\Activate.ps1
+python app.py
+```
+
+The server is ready when it prints `loading model: gpt2 loaded and ready.` (GPT-2 is loaded at startup, so the first request isn't slow). It runs at `http://127.0.0.1:5000`. Check it's alive from a second terminal:
+
+```powershell
+curl.exe -X POST http://127.0.0.1:5000/ping -H "Content-Type: application/json" -d '{}'
+```
+
+`gunicorn` (in `requirements.txt`) doesn't run on Windows, so on my machine the service runs with Flask's own server (`python app.py`). On Linux or macOS the production command would be `gunicorn app:app --bind 0.0.0.0:$PORT`.
+
+### Settings (environment variables)
+
+| Variable | Default | What it does |
+|---|---|---|
+| `AI201_FAULT` | `none` | Makes a part fail on purpose, to test the failure handling: `model_error`, `model_slow`, `log_error`. A typo stops the server from starting. |
+| `HOST` | `127.0.0.1` | My machine only |
+| `PORT` | `5000` | The port the service listens on |
+| `AI201_DEBUG` | `1` | Debug mode, only ever on for `127.0.0.1` |
+
+Set one in PowerShell before starting, for example: `$env:AI201_FAULT = "model_error"; python app.py`. It only lasts for that terminal window. Back to normal: `$env:AI201_FAULT = "none"; python app.py`.
+
+The time limit on GPT-2 (`DETECTOR_TIMEOUT_SECONDS = 10`), the text length limit (`MAX_TEXT_CHARS = 20,000`) and the rate limits (5 per minute, 50 per day) are in `config.py`.
+
+### The logs
+
+| Where | What it shows |
+|---|---|
+| `logs/audit.jsonl` | One JSON line per event: every decision (with both signal scores, the combined score, the label, and `degraded: true` plus the reason when the model failed or timed out), every appeal, every rejected request (400 bad input, 429 rate limit), and every unexpected error |
+| `GET /log` | The same log through the service: `curl.exe "http://127.0.0.1:5000/log?limit=20"` |
+| The server terminal | Failures that can't go into the log, for example when the log itself can't be written (the service then answers 503) |
+
+Counting from the log, in PowerShell:
+
+```powershell
+(Select-String '"degraded": true' logs\audit.jsonl).Count    # degraded decisions
+(Select-String '"event": "rejected"' logs\audit.jsonl).Count # rejected requests
+(Select-String '"event": "error"' logs\audit.jsonl).Count    # unexpected errors
+```
+
+---
+
+Everything below is the starter's guide: how the project works in general.
 
 This is a **web service**. It runs on your machine and you talk to it with
 `curl` from another terminal. If you've not built a backend before, that's

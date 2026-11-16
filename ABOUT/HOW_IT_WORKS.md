@@ -188,6 +188,35 @@ So criterion 8 ("10 of 10 return a JSON 503, never a 500, and none returns a con
 
 ---
 
+## Running it: local, with logs
+
+**Purpose:** every extension must run somewhere and leave a record (the "run path" and "the log"). I chose to run it on my own machine, with logs, instead of hosting it.
+
+**Why not a host:** the numbers don't fit. torch (~200–800 MB) plus the GPT-2 weights (~550 MB, loaded into memory) are over a free tier's 512 MB before a single request. A free host also has no lasting disk, so the 550 MB model would download again after every idle spin-down. The starter's `RUNNING.md` says the same: this project is expected to run locally.
+
+**What I wrote:** a new section at the top of `RUNNING.md`, "How I run it: local, with logs", with:
+- what the environment needs (Python 3.11–3.13, ~1.5 GB memory, ~1 GB disk, internet only the first time)
+- the exact start commands (first-time setup, then `.venv\Scripts\Activate.ps1` and `python app.py`)
+- the settings (`AI201_FAULT`, `HOST`, `PORT`, `AI201_DEBUG`) and where the limits live (`config.py`)
+- the logs: `logs/audit.jsonl`, `GET /log`, and the server terminal for failures the log can't record
+
+**Words to know:**
+- **Run path:** the exact steps to start the system from nothing.
+- **gunicorn:** a "production" web server for Python. It doesn't run on Windows, so I use Flask's own server (`python app.py`), which is fine for running locally.
+- **Spin-down:** free hosts stop your app when nobody uses it, and start it again on the next request. Anything not saved to a lasting disk (like a downloaded model) is gone.
+
+**Counting from the log (PowerShell):**
+
+```powershell
+(Select-String '"degraded": true' logs\audit.jsonl).Count    # degraded decisions
+(Select-String '"event": "rejected"' logs\audit.jsonl).Count # rejected requests
+(Select-String '"event": "error"' logs\audit.jsonl).Count    # unexpected errors
+```
+
+On my real log right now: 0 degraded (the fault tests used temporary logs), 32 rejected, 0 errors.
+
+---
+
 ## Things I noticed along the way
 
 - **Short texts can get the AI label.** A 3-sentence, ~20-word test text got AI (0.65): it's too short for the style signal (which returns 0.5), so the model score decides alone. Same mechanism as the Arabic text (diagnosis 2). Belongs in "What's Still Broken".
