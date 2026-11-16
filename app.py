@@ -27,6 +27,7 @@ Routes:
 import uuid
 
 from flask import Flask, jsonify, request
+from werkzeug.exceptions import HTTPException
 
 import audit
 import config
@@ -113,6 +114,37 @@ if config.RATE_LIMITING_ENABLED:
             "message": "Too many submissions. Try again shortly.",
             "limit": str(exc.description),
         }), 429
+
+
+# ── Error handling: never an HTML crash page ──────────────────────────────────
+
+@app.errorhandler(Exception)
+def handle_any_error(exc):
+    """
+    The last safety net. Any error that reaches here becomes JSON.
+
+    Without this, an error no route planned for makes Flask send an HTML
+    debug page: callers expecting JSON can't read it, and it shows my code.
+
+    Two kinds of error arrive here:
+    - HTTP errors Flask raises itself (404 unknown URL, 405 wrong method).
+      These are expected, so they keep their status code, just as JSON.
+    - Real crashes. These become a 500 with a short message for the caller,
+      and the details go to the audit log so the failure leaves a trace.
+    """
+    if isinstance(exc, HTTPException):
+        return jsonify({"error": exc.name.lower().replace(" ", "_"),
+                        "message": exc.description}), exc.code
+
+    try:
+        audit.log_error(route=request.path, error=exc)
+    except Exception as log_exc:
+        # The log itself is broken, so at least report it on the console.
+        app.logger.error("Could not write the error to the audit log: %s", log_exc)
+    app.logger.error("Unexpected error on %s", request.path, exc_info=exc)
+
+    return jsonify({"error": "internal_error",
+                    "message": "Something went wrong on our side. Please try again later."}), 500
 
 
 # ── The worked example. Already works. Don't edit. ────────────────────────────
@@ -312,7 +344,16 @@ def appeal():
     to the person on the other end. It's the only thing standing between a
     wrong accusation and nothing at all.
     """
-    payload = request.get_json(silent=True) or {}
+    # The body must be a JSON object. A JSON array used to crash here: the
+    # same bug RQ07 found in /submit (`[...] or {}` keeps the list, and a
+    # list has no .get). Bad appeals are not logged (criterion 4).
+    payload = request.get_json(silent=True)
+    if payload is None:
+        payload = {}
+    if not isinstance(payload, dict):
+        return jsonify({"error": "bad_request",
+                        "message": "Send a JSON object, like {\"content_id\": \"...\", \"reasoning\": \"...\"}."}), 400
+
     content_id = payload.get("content_id")
     reasoning = payload.get("reasoning")
 

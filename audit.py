@@ -92,6 +92,24 @@ def log_appeal(content_id: str, creator_id: str, reasoning: str) -> dict:
     })
 
 
+def log_error(route: str, error: Exception, **extra) -> dict:
+    """
+    Record an unexpected error: a failure no route planned for.
+
+    The response to the caller is a plain JSON 500 that hides the details; the
+    details go here, so the failure can still be found and diagnosed later.
+    """
+    return _append({
+        "timestamp": _now(),
+        "event": "error",
+        "status": "error",
+        "route": route,
+        "error_type": type(error).__name__,
+        "detail": str(error)[:200],
+        **extra,
+    })
+
+
 def log_rejection(creator_id: str, reason: str, **extra) -> dict:
     """
     Record a request that never became a decision — a rate-limit rejection or
