@@ -25,11 +25,12 @@ Routes:
 """
 
 import os
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as DetectorTimeout
 
-from flask import Flask, jsonify, request
+from flask import Flask, g, jsonify, request
 from werkzeug.exceptions import HTTPException
 
 import audit
@@ -41,6 +42,35 @@ app = Flask(__name__)
 # for it after config.DETECTOR_TIMEOUT_SECONDS (see /submit). A few workers,
 # so one stuck check doesn't block everyone else.
 _detector_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="detector")
+
+
+# ── Run facts for the audit log ───────────────────────────────────────────────
+# Registered before the rate limiter (below), so Flask runs it first and the
+# clock also starts for requests the limiter turns away with a 429.
+
+@app.before_request
+def _start_clock():
+    g.start_time = time.perf_counter()
+
+
+def _run_facts() -> dict:
+    """
+    Extra fields every log entry gets, so each run can be read back later:
+
+    - duration_ms: how long the request took until it was logged. Shows the
+      10-second detector timeouts directly in the log.
+    - text_chars: how long the submitted text was. Describes the input without
+      storing it: the text itself is never logged, so nothing a caller sends
+      can be written into the log (PI05).
+    """
+    facts = {}
+    start = g.get("start_time")
+    if start is not None:
+        facts["duration_ms"] = round((time.perf_counter() - start) * 1000, 1)
+    payload = request.get_json(silent=True)
+    if isinstance(payload, dict) and isinstance(payload.get("text"), str):
+        facts["text_chars"] = len(payload["text"])
+    return facts
 
 
 # ── Rate limiting — UNIT 8 ────────────────────────────────────────────────────
@@ -145,7 +175,7 @@ def handle_any_error(exc):
                         "message": exc.description}), exc.code
 
     try:
-        audit.log_error(route=request.path, error=exc)
+        audit.log_error(route=request.path, error=exc, **_run_facts())
     except Exception as log_exc:
         # The log itself is broken, so at least report it on the console.
         app.logger.error("Could not write the error to the audit log: %s", log_exc)
@@ -213,7 +243,7 @@ def _try_log_rejection(**fields):
     missing trace is reported on the console instead.
     """
     try:
-        audit.log_rejection(**fields)
+        audit.log_rejection(**fields, **_run_facts())
     except OSError as exc:
         app.logger.error("Could not write a rejection to the audit log", exc_info=exc)
 
@@ -384,6 +414,7 @@ def submit():
             label=label,
             status="decided",
             **degraded_fields,
+            **_run_facts(),
         )
     except OSError as exc:
         return _log_unavailable("a decision", exc)
@@ -460,7 +491,8 @@ def appeal():
     #    If the log can't be written: 503. Confirming an appeal that was never
     #    saved would tell the writer a person will review it when nobody will.
     try:
-        audit.log_appeal(content_id=content_id, creator_id=creator_id, reasoning=reasoning.strip())
+        audit.log_appeal(content_id=content_id, creator_id=creator_id, reasoning=reasoning.strip(),
+                         **_run_facts())
     except OSError as exc:
         return _log_unavailable("an appeal", exc)
 

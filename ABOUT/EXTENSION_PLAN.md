@@ -114,25 +114,19 @@ After building, with `FAULT=none`:
 
 ### Next, in order
 
-1. **Commit what's not committed yet:** step 4 (`app.py`), the `ABOUT/` folder (it was never added to git), `RUNNING.md`, and the moved `EXTENSION_PLAN.md`.
-   ```powershell
-   git add ABOUT EXTENSION_PLAN.md app.py RUNNING.md logs/audit.jsonl
-   git commit -m "Add step 4 and run instructions"
-   git push
-   ```
-2. **Regression check** (server running with `AI201_FAULT` = `none`): confirm the original system still works.
+1. **Regression check** (server running with `AI201_FAULT` = `none`): confirm the original system still works.
    - `python run_eval.py --label extension` → same verdicts as `results/run_2026-11-15_1427_after.md` (criteria 1, 3, 5 MET; 2 MISSED)
    - `python run_attacks.py --set attack_set --label extension` → still 49 HELD and 7 BROKE (compare with `results/attack_run_2026-11-15_1427_after.md`), and every answer JSON
    - rerun the appeal test for criterion 4 → 10 of 10, bad 3 of 3
-3. **Criteria 6–10 runs, three trials each,** saved in `results/` as evidence. Each fault needs the server restarted with that fault switched on:
+2. **Criteria 6–10 runs, three trials each,** saved in `results/` as evidence. Each fault needs the server restarted with that fault switched on:
    - 6: `AI201_FAULT=model_error` → 10 of 10 return 200, unsure, `degraded: true`, logged as degraded
    - 7: `AI201_FAULT=model_slow` → 10 of 10 answer within 12 seconds, degraded unsure
    - 8: `AI201_FAULT=log_error` → 10 of 10 return JSON 503, no content_id
    - 9: `AI201_FAULT=none` → every bad request to either endpoint is JSON, 0 HTML pages across the attack set
    - 10: `AI201_FAULT=none` → my 10 texts get the same scores and labels as in unit 8
-4. **`criteria.md`:** add criteria 6–10 under an "Extension" heading (the original five stay unchanged).
-5. **README:**
+3. **`criteria.md`:** add criteria 6–10 under an "Extension" heading (the original five stay unchanged).
+4. **README:**
    - endpoint description: `confidence` can be `null` in degraded mode; new fields `degraded` and `degraded_reason`; `/submit` can return 503 (log can't be written); every error, including 404/405/500, is JSON
    - the extension's results: the criteria 6–10 table (three trials) and real pasted output, like unit 8
    - "What's Still Broken": add short texts getting the AI label (the style signal returns 0.5, so the model score decides alone)
-6. **Commit** the results, criteria and README updates (commit 5 in the table above).
+5. **Commit** the results, criteria and README updates (commit 5 in the table above).

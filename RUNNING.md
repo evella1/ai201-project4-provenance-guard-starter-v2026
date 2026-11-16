@@ -32,6 +32,14 @@ Every time:
 python app.py
 ```
 
+**If activating fails with "running scripts is disabled on this system":** Windows PowerShell blocks script files (`.ps1`) by default, and `Activate.ps1` is one. Allow them for your user account, once (no admin rights needed; answer `Y` if asked):
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+```
+
+Then run `.venv\Scripts\Activate.ps1` again. If you'd rather not change the setting, skip activating and call the venv's Python directly: `.venv\Scripts\python.exe app.py`.
+
 The server is ready when it prints `loading model: gpt2 loaded and ready.` (GPT-2 is loaded at startup, so the first request isn't slow). It runs at `http://127.0.0.1:5000`. Check it's alive from a second terminal:
 
 ```powershell
