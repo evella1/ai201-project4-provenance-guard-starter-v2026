@@ -112,7 +112,7 @@ if config.RATE_LIMITING_ENABLED:
         payload = request.get_json(silent=True)
         if not isinstance(payload, dict):
             payload = {}
-        audit.log_rejection(
+        _try_log_rejection(
             creator_id=payload.get("creator_id", "unknown"),
             reason="rate_limited",
             limit=str(exc.description),
@@ -190,6 +190,34 @@ def health():
 
 # ── YOU BUILD THIS ────────────────────────────────────────────────────────────
 
+def _log_unavailable(what: str, exc: Exception):
+    """
+    The audit log couldn't be written. Answer 503 ("try again later").
+
+    Failing safely: a decision or appeal that isn't recorded can't be
+    appealed or checked later, so the service refuses instead of answering
+    with something untraceable. The log itself is what failed, so the
+    problem is reported on the server console instead.
+    """
+    app.logger.error("Could not write %s to the audit log", what, exc_info=exc)
+    return jsonify({"error": "service_unavailable",
+                    "message": "We couldn't save this result, so we can't give you one right now. "
+                               "Please try again in a few minutes."}), 503
+
+
+def _try_log_rejection(**fields):
+    """
+    Log a rejected request, but never let a broken log change the answer.
+
+    A refused request is still refused (400 or 429) if the log is down; the
+    missing trace is reported on the console instead.
+    """
+    try:
+        audit.log_rejection(**fields)
+    except OSError as exc:
+        app.logger.error("Could not write a rejection to the audit log", exc_info=exc)
+
+
 def _reject(creator_id, error: str, message: str):
     """
     Refuse a bad /submit request with a 400 AND leave a trace in the log.
@@ -200,7 +228,7 @@ def _reject(creator_id, error: str, message: str):
     log keeps one shape for that field.
     """
     who = creator_id if isinstance(creator_id, str) and creator_id.strip() else "invalid"
-    audit.log_rejection(creator_id=who, reason=error, route="/submit")
+    _try_log_rejection(creator_id=who, reason=error, route="/submit")
     return jsonify({"error": error, "message": message}), 400
 
 
@@ -342,18 +370,23 @@ def submit():
     # Step 4 + 7 - log the decision with BOTH signal scores and the combined one,
     # so a surprising result can be traced to the signal that caused it.
     # A degraded decision is marked as degraded, with the reason.
+    # If the log can't be written: 503 and no content_id, because a decision
+    # that isn't recorded can't be appealed (see _log_unavailable).
     content_id = f"c_{uuid.uuid4().hex[:12]}"
-    audit.log_decision(
-        content_id=content_id,
-        creator_id=creator_id,
-        guess=guess,
-        model_score=model_score,
-        style_score=style_score,
-        combined_score=combined_score,
-        label=label,
-        status="decided",
-        **degraded_fields,
-    )
+    try:
+        audit.log_decision(
+            content_id=content_id,
+            creator_id=creator_id,
+            guess=guess,
+            model_score=model_score,
+            style_score=style_score,
+            combined_score=combined_score,
+            label=label,
+            status="decided",
+            **degraded_fields,
+        )
+    except OSError as exc:
+        return _log_unavailable("a decision", exc)
 
     # Both signal scores go in the response too: unit 8's tools read them from here.
     # "degraded" tells the caller whether this was a full check.
@@ -424,7 +457,12 @@ def appeal():
     # 2. Record the appeal after the original decision (the decision is never changed).
     #    If no creator_id is sent, use the one from the original submission.
     creator_id = payload.get("creator_id") or history[0].get("creator_id", "unknown")
-    audit.log_appeal(content_id=content_id, creator_id=creator_id, reasoning=reasoning.strip())
+    #    If the log can't be written: 503. Confirming an appeal that was never
+    #    saved would tell the writer a person will review it when nobody will.
+    try:
+        audit.log_appeal(content_id=content_id, creator_id=creator_id, reasoning=reasoning.strip())
+    except OSError as exc:
+        return _log_unavailable("an appeal", exc)
 
     # 3. Confirm to the writer.
     return jsonify({
