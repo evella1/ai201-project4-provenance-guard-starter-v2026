@@ -24,7 +24,10 @@ Routes:
     GET  /health      is the service up, and is the model loaded
 """
 
+import os
 import uuid
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as DetectorTimeout
 
 from flask import Flask, jsonify, request
 from werkzeug.exceptions import HTTPException
@@ -33,6 +36,11 @@ import audit
 import config
 
 app = Flask(__name__)
+
+# The detector runs on a separate worker thread, so /submit can stop waiting
+# for it after config.DETECTOR_TIMEOUT_SECONDS (see /submit). A few workers,
+# so one stuck check doesn't block everyone else.
+_detector_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="detector")
 
 
 # ── Rate limiting — UNIT 8 ────────────────────────────────────────────────────
@@ -290,12 +298,25 @@ def submit():
     # "unsure" and says the text couldn't be fully checked. Why not use the
     # style signal alone: it's the weaker signal and easy to fool, so on its
     # own it could clear AI text as human.
+    #
+    # Time limit - the detector runs on a worker thread, and /submit waits at
+    # most config.DETECTOR_TIMEOUT_SECONDS for it. If it takes longer, the
+    # writer gets the same degraded "unsure" answer, with reason "timeout".
+    # Python can't stop the slow check: it keeps running in the background,
+    # the route just stops waiting for it.
     degraded_reason = None
     try:
-        model_score = detector.model_signal(text)
+        future = _detector_pool.submit(detector.model_signal, text)
+        model_score = future.result(timeout=config.DETECTOR_TIMEOUT_SECONDS)
     except ValueError:
         return _reject(creator_id, "text_too_short",
                        "Text is too short to check. Please send at least a few sentences.")
+    except DetectorTimeout:
+        app.logger.error("Detector took longer than %ss, answering in degraded mode",
+                         config.DETECTOR_TIMEOUT_SECONDS)
+        model_score = None
+        degraded_reason = "timeout"
+        error_type = "TimeoutError"
     except Exception as exc:
         app.logger.error("Detector failed, answering in degraded mode", exc_info=exc)
         model_score = None
@@ -443,6 +464,17 @@ def main():
     print('    -H "Content-Type: application/json" \\')
     print("    -d '{\"message\": \"hello\"}'")
     print()
+    # Load GPT-2 now, not on the first request. Loading takes several seconds,
+    # so otherwise the first submission would always hit the time limit.
+    # In debug mode Flask starts the app twice (a watcher process and the real
+    # server); only the real server (WERKZEUG_RUN_MAIN) needs the model.
+    if not config.DEBUG or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+        import detector
+        try:
+            print(f"  loading model:   {detector.warm_up()}")
+        except Exception as exc:
+            # Don't refuse to start: /submit will answer in degraded mode.
+            print(f"  loading model:   FAILED ({exc}) - submissions will be degraded")
     # debug=True hands out an interactive debugger, so it's local-only — see config.py
     app.run(host=config.HOST, port=config.PORT, debug=config.DEBUG)
 

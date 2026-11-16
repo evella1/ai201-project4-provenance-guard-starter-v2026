@@ -75,6 +75,13 @@ if FAULT not in FAULTS:
 FAULT_SLOW_SECONDS = 30
 
 
+# ─── Time limit on the detector ──────────────────────────────────────────────
+# If GPT-2 hasn't answered within this many seconds, /submit stops waiting and
+# answers in degraded mode ("unsure", reason "timeout"). A normal check takes
+# about a second once the model is loaded, so 10 seconds is a lot of room.
+DETECTOR_TIMEOUT_SECONDS = 10
+
+
 # ─── Scoring (Milestone 4) ───────────────────────────────────────────────────
 # How much each signal counts toward the combined score.
 #
