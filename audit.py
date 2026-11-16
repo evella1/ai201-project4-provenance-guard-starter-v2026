@@ -113,6 +113,11 @@ def log_rejection(creator_id: str, reason: str, **extra) -> dict:
 
 
 def _append(entry: dict) -> dict:
+    # Fault injection: pretend the log file can't be written,
+    # with the same kind of error a full disk or a locked file would raise.
+    if config.FAULT == "log_error":
+        raise OSError("Simulated fault: the audit log could not be written (AI201_FAULT=log_error).")
+
     config.LOG_DIR.mkdir(parents=True, exist_ok=True)
     line = json.dumps(entry, ensure_ascii=False)
     with _lock:

@@ -51,6 +51,30 @@ DETECTOR_MAX_TOKENS = 400
 MAX_TEXT_CHARS = 20_000
 
 
+# ─── Fault injection ─────────────────────────────────────────────────────────
+# A switch that makes a part of the service fail ON PURPOSE, so I can prove
+# the failure handling works without waiting for a real crash. Set it with an
+# environment variable before starting the server, e.g. in PowerShell:
+#
+#     $env:AI201_FAULT = "model_error"; python app.py
+#
+#   none         normal operation (the default)
+#   model_error  the detector (GPT-2) throws an error
+#   model_slow   the detector takes FAULT_SLOW_SECONDS to answer
+#   log_error    the audit log can't be written
+#
+# The faults happen INSIDE the parts that fail (detector.py, audit.py), not in
+# app.py, so the route has to handle them like real failures.
+
+FAULTS = ("none", "model_error", "model_slow", "log_error")
+FAULT = os.getenv("AI201_FAULT", "none").strip().lower()
+if FAULT not in FAULTS:
+    # Fail at startup on a typo, instead of silently testing nothing.
+    raise ValueError(f"AI201_FAULT={FAULT!r} is not one of {', '.join(FAULTS)}")
+
+FAULT_SLOW_SECONDS = 30
+
+
 # ─── Scoring (Milestone 4) ───────────────────────────────────────────────────
 # How much each signal counts toward the combined score.
 #

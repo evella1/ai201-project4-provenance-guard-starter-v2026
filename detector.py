@@ -42,6 +42,7 @@ for yourself where it lands.
 """
 
 import math
+import time
 
 import config
 
@@ -125,6 +126,12 @@ def model_signal(text: str) -> float:
     inputs in Milestone 4 and seen what your own text actually scores. If you
     do, say so in your README: it's a scoring decision, not a detail.
     """
+    # Fault injection: pretend the model broke or got slow.
+    if config.FAULT == "model_error":
+        raise RuntimeError("Simulated fault: the model failed (AI201_FAULT=model_error).")
+    if config.FAULT == "model_slow":
+        time.sleep(config.FAULT_SLOW_SECONDS)
+
     ppl = perplexity(text)
 
     midpoint = 45.0    # perplexity that scores 0.5
