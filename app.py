@@ -278,28 +278,49 @@ def submit():
     # python detector.py "some text"
     import detector
 
+    import stylometry
+    import scoring
+
     # Check 4 - text too short to score. The detector raises an error below
     # 3 tokens, which used to crash the route with a 500 (MF02).
+    #
+    # Degraded mode - if the detector fails in any other way (GPT-2 can't
+    # load, crashes, ...), the service still answers instead of crashing.
+    # It can't judge the text with one signal missing, so it always answers
+    # "unsure" and says the text couldn't be fully checked. Why not use the
+    # style signal alone: it's the weaker signal and easy to fool, so on its
+    # own it could clear AI text as human.
+    degraded_reason = None
     try:
         model_score = detector.model_signal(text)
     except ValueError:
         return _reject(creator_id, "text_too_short",
                        "Text is too short to check. Please send at least a few sentences.")
+    except Exception as exc:
+        app.logger.error("Detector failed, answering in degraded mode", exc_info=exc)
+        model_score = None
+        degraded_reason = "model_error"
+        error_type = type(exc).__name__
 
     # Step 5 - the second signal, tested from the terminal first:
     # $text | python stylometry.py
-    import stylometry
-    import scoring
+    # In degraded mode it is still recorded, for information only.
     style_score = round(stylometry.style_signal(text), 4)
 
-    # Step 6 - combine them (rule in scoring.py::combine_signals, numbers in config.py)
-    combined_score = round(scoring.combine_signals(model_score, style_score), 4)
-
-    # Step 8 - turn the score into a guess and the sentence the writer sees
-    guess, label = scoring.score_to_label(combined_score)
+    if degraded_reason:
+        combined_score = None
+        guess, label = "unsure", scoring.DEGRADED_LABEL
+        degraded_fields = {"degraded": True, "degraded_reason": degraded_reason, "error_type": error_type}
+    else:
+        # Step 6 - combine them (rule in scoring.py::combine_signals, numbers in config.py)
+        combined_score = round(scoring.combine_signals(model_score, style_score), 4)
+        # Step 8 - turn the score into a guess and the sentence the writer sees
+        guess, label = scoring.score_to_label(combined_score)
+        degraded_fields = {}
 
     # Step 4 + 7 - log the decision with BOTH signal scores and the combined one,
     # so a surprising result can be traced to the signal that caused it.
+    # A degraded decision is marked as degraded, with the reason.
     content_id = f"c_{uuid.uuid4().hex[:12]}"
     audit.log_decision(
         content_id=content_id,
@@ -310,10 +331,12 @@ def submit():
         combined_score=combined_score,
         label=label,
         status="decided",
+        **degraded_fields,
     )
 
     # Both signal scores go in the response too: unit 8's tools read them from here.
-    return jsonify({
+    # "degraded" tells the caller whether this was a full check.
+    response = {
         "content_id": content_id,
         "creator_id": creator_id,
         "guess": guess,
@@ -321,7 +344,11 @@ def submit():
         "label": label,
         "model_score": model_score,
         "style_score": style_score,
-    }), 200
+        "degraded": bool(degraded_reason),
+    }
+    if degraded_reason:
+        response["degraded_reason"] = degraded_reason
+    return jsonify(response), 200
 
 
 @app.post("/appeal")

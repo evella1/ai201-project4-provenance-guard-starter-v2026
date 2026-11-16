@@ -922,7 +922,7 @@ I'd keep making the AI label hard to reach, so fewer honest writers get accused,
 
 **Size check:** four pieces, each small: (1) a JSON error handler for unexpected errors plus the `/appeal` fix, (2) degraded mode when the detector fails, (3) a time limit on the detector, (4) handling a log write failure, plus a setting to trigger each one. That should fit in about ninety minutes. If it doesn't, the time limit is the first thing I'd cut.
 
-**Build steps** (details in `EXTENSION_PLAN.md`):
+**Build steps** (details in `ABOUT/EXTENSION_PLAN.md`):
 0. A switch that causes failures on purpose
 1. Never an HTML crash page; fix `/appeal`
 2. Degraded mode when GPT-2 fails

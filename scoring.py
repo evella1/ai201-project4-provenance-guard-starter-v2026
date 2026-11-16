@@ -116,6 +116,14 @@ UNSURE_LABEL = (
     "yourself, you can tell us by appealing with your content ID."
 )
 
+# Degraded mode: the model signal failed, so the text wasn't fully checked.
+# Never a verdict either way, and it tells the writer what they can do.
+DEGRADED_LABEL = (
+    "We couldn't fully check this text right now, so we can't say whether it "
+    "was written by a person or with AI help. This is not an accusation. "
+    "Please submit it again later for a full check."
+)
+
 AI_LABEL = (
     "This text has patterns we often see in AI-generated writing. This is a "
     "guess, not proof, and we can be wrong. If you wrote it yourself, you can "
