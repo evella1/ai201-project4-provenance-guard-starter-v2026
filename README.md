@@ -907,6 +907,21 @@ The failures that are left come from the signals, not the route, so this change 
 
 I'd keep making the AI label hard to reach, so fewer honest writers get accused, even though more AI text gets through as unsure. The people who pay for it are teachers and site owners, who get fewer confident answers and have to judge more unsure cases themselves, instead of writers like me who wrote every word in their second language.
 
+<!-- ═══════════════════════ EXTENSION ═══════════════════════ -->
+
+---
+
+## The Shape
+
+**B: Harden against failure.** My service works when everything goes right, but it has never been tested when one of its own parts fails. If GPT-2 can't load or throws an error, every submission crashes with a 500 and an HTML debug page. If the detector is slow, the writer just waits. If the audit log can't be written, the decision is lost after all the scoring work is done. And `/appeal` still crashes on a JSON array body, the same bug RQ07 found in `/submit`. I'm adding failure handling for these cases: a JSON error instead of a crash for anything unexpected, a time limit on the detector, a clear answer when the log can't be written, and a "degraded mode" for when the model signal fails. In degraded mode the service always answers "unsure", with a label saying the text couldn't be fully checked right now, and logs the decision as degraded. I chose this over scoring with the style signal alone: my tests showed the style signal is the weaker one and easy to fool (the AI ramen review scored 0.35 on it, right on the human line), so on its own it could clear AI text as human. "Unsure" never accuses a writer and never claims something the service couldn't check. To prove each case works, I'll add a setting that makes the failure happen on purpose, and every failure will leave an entry in the audit log.
+
+**Out of scope:**
+- I'm not fixing how the signals judge text: non-English writing, the criterion 2 gap and the PI02/EV05 evasions stay in "What's Still Broken". Those are judgment problems, not failures.
+- I'm not adding retries. My only dependency is GPT-2 running on the same machine, and retrying a local model that failed the same way will just fail again.
+- I'm not building the appeal review step (`/review`, `/status`). It's a new feature, not failure handling.
+
+**Size check:** four pieces, each small: (1) a JSON error handler for unexpected errors plus the `/appeal` fix, (2) degraded mode when the detector fails, (3) a time limit on the detector, (4) handling a log write failure, plus a setting to trigger each one. That should fit in about ninety minutes. If it doesn't, the time limit is the first thing I'd cut.
+
 <!-- ═════════════════════════════════════════════════════════════════════
 
      SUBMISSION CHECKLIST — unit 7
