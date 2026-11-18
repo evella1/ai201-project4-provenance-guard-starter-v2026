@@ -132,3 +132,48 @@ Crashing on bad input is one of the most common failures, and people send text t
      A number you missed stays where it is, gets diagnosed, and gets a fix
      attempted. That's where the points are.
      ───────────────────────────────────────────────────────────────────────── -->
+
+
+**Unit 9 - Capstone Criteria**
+
+
+## 1. Model failure
+
+With `AI201_FAULT=model_error`, 10 of 10 submissions return 200 in degraded mode, and none returns a 500:
+- `guess: "unsure"`, with a label saying the text couldn't be fully checked right now
+- `"degraded": true` in the response
+- `model_score: null` (it never ran); the style score is still recorded, for information only
+- a log entry with `degraded: true` and the reason (`model_error`)
+
+Text that is too short to check still gets a 400, as before.
+
+**Why this target:**
+With GPT-2 broken, every submission used to crash. The answer has to be "unsure" and not a score from the style signal alone, because my tests showed the style signal is the weaker one and easy to fool, so on its own it could clear AI text as human. "Unsure" never accuses a writer and never claims something the service couldn't check.
+
+## 2. Slow model
+
+With `AI201_FAULT=model_slow` (GPT-2 takes 30 seconds), 10 of 10 submissions answer within 12 seconds, in the same degraded mode as criterion 1, with reason `timeout`.
+
+**Why this target:**
+Without a time limit, a slow model makes the writer wait as long as it takes, maybe forever. A normal check takes under a second, so the 10-second limit (`DETECTOR_TIMEOUT_SECONDS`) leaves plenty of room; 12 seconds is that limit plus a margin for the rest of the request. A writer who waits that long should get an honest answer, not a hang.
+
+## 3. Log failure
+
+With `AI201_FAULT=log_error`, 10 of 10 submissions return a JSON 503 ("We couldn't save this result, please try again"), never a 500, and none returns a content ID. Since the log itself failed, each failure is reported to the server console instead.
+
+**Why this target:**
+A decision that isn't recorded can't be appealed (`/appeal` would answer "not found") or checked later. Giving a writer a content ID for a decision that was never saved would point them to an appeal that can't work, so the safe answer is to refuse.
+
+## 4. No HTML errors
+
+Every error from either endpoint is JSON: 0 HTML pages across the whole attack set, a JSON array sent to `/appeal`, an unknown URL and a wrong method. An unexpected crash returns a 500 with `{"error": "internal_error", "message": "..."}` and writes an `error` entry to the log.
+
+**Why this target:**
+An unexpected error used to show an HTML debug page: programs expecting JSON couldn't read it, it showed my code, and the crash left no trace in the log. A failure that leaves no record can't be found or fixed later, so the target is zero HTML pages, not "few".
+
+## 5. Nothing else changes
+
+With `AI201_FAULT=none`, my 10 own texts get exactly the same scores and labels as in unit 8.
+
+**Why this target:**
+The failure handling should only change what happens when something breaks. If it moved any score, I would have changed how the detector judges text, and every result from unit 8 would no longer hold.

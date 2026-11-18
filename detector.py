@@ -54,6 +54,16 @@ class DetectorUnavailable(RuntimeError):
     """The model couldn't be loaded — no download yet, or no disk."""
 
 
+class TextTooShort(ValueError):
+    """
+    The text has fewer than 3 tokens, so there's nothing to score.
+
+    Its own type, so /submit can answer "too short" (400) for exactly this
+    case. A plain ValueError could also come from inside torch or the
+    tokenizer, and that is a model failure (degraded mode), not bad input.
+    """
+
+
 def _load():
     """Load the model once and keep it. First call downloads ~550 MB."""
     global _model, _tokenizer
@@ -105,7 +115,7 @@ def perplexity(text: str) -> float:
 
     # Two tokens is not enough to be surprised by anything.
     if input_ids.shape[1] < 3:
-        raise ValueError("Text is too short to score — a few sentences at least.")
+        raise TextTooShort("Text is too short to score — a few sentences at least.")
 
     with torch.no_grad():
         output = model(input_ids, labels=input_ids)

@@ -90,7 +90,7 @@ What comes out on success (200):
 - message: string, a sentence confirming the appeal was received and that a person will review it.
 
 What comes out when something goes wrong:
-- 400 with error "bad_request" if the body isn't JSON, or content_id or reasoning is missing, not a string, or empty.
+- 400 with error "bad_request" if the body isn't JSON, or content_id or reasoning is missing, not a string, or empty, or if creator_id is sent but isn't a non-empty string.
 - 404 with error "not_found" if no submission with that content_id exists.
 
 Appealing the same content_id more than once is allowed. Each appeal is recorded in the log, and the status stays "under_review". The original decision is never changed or deleted. The appeal is added after it in the log.

@@ -370,7 +370,10 @@ def submit():
     try:
         future = _detector_pool.submit(detector.model_signal, text)
         model_score = future.result(timeout=config.DETECTOR_TIMEOUT_SECONDS)
-    except ValueError:
+    except detector.TextTooShort:
+        # Only the detector's own "too short" error is bad input. Any other
+        # error, a ValueError from inside torch included, is a model failure
+        # and falls through to degraded mode below.
         return _reject(creator_id, "text_too_short",
                        "Text is too short to check. Please send at least a few sentences.")
     except DetectorTimeout:
@@ -480,6 +483,13 @@ def appeal():
     if not isinstance(reasoning, str) or not reasoning.strip():
         return jsonify({"error": "bad_request",
                         "message": "Please include \"reasoning\": why you think the result is wrong."}), 400
+    # creator_id is optional, but if it's sent it must be a non-empty string,
+    # the same rule /submit uses since RQ06. An object used to go straight
+    # into the log here too.
+    sent_creator = payload.get("creator_id")
+    if sent_creator is not None and (not isinstance(sent_creator, str) or not sent_creator.strip()):
+        return jsonify({"error": "bad_request",
+                        "message": "\"creator_id\" must be a non-empty string."}), 400
 
     # 1. The content_id must belong to a real earlier submission.
     content_id = content_id.strip()
@@ -491,7 +501,7 @@ def appeal():
 
     # 2. Record the appeal after the original decision (the decision is never changed).
     #    If no creator_id is sent, use the one from the original submission.
-    creator_id = payload.get("creator_id") or history[0].get("creator_id", "unknown")
+    creator_id = sent_creator or history[0].get("creator_id", "unknown")
     #    If the log can't be written: 503. Confirming an appeal that was never
     #    saved would tell the writer a person will review it when nobody will.
     try:
