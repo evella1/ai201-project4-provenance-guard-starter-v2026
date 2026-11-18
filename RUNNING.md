@@ -8,7 +8,8 @@
 
 | Need | Details |
 |---|---|
-| Python | 3.11, 3.12 or 3.13 (not 3.14). I use 3.13. |
+| Python | 3.11, 3.12 or 3.13 (not 3.14 or newer: some packages have no ready-made install for them yet). I use 3.13. |
+| Windows only | the Microsoft Visual C++ Redistributable (x64), which torch needs to start |
 | Memory | about 1.5 GB free (torch + GPT-2 loaded) |
 | Disk | about 1 GB for the packages and the GPT-2 download (cached after the first time) |
 | Internet | only the first time, to download GPT-2 |
@@ -19,11 +20,15 @@
 First time only, in the project folder:
 
 ```powershell
-python -m venv .venv
+py -0                       # lists the installed Python versions; 3.13 must be one of them
+py -3.13 -m venv .venv      # creates the venv with Python 3.13, whatever "python" points to
 .venv\Scripts\Activate.ps1
+python --version            # should print Python 3.13.x
 pip install -r requirements.txt
 python detector.py          # downloads GPT-2 (~550 MB) and scores a sample
 ```
+
+If 3.13 isn't in the list, install it next to your other versions with `winget install Python.Python.3.13` (or from python.org), then open a new terminal.
 
 Every time:
 
@@ -39,6 +44,24 @@ Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 ```
 
 Then run `.venv\Scripts\Activate.ps1` again. If you'd rather not change the setting, skip activating and call the venv's Python directly: `.venv\Scripts\python.exe app.py`.
+
+**If `pip install` fails with "Failed building wheel" (for example for `pyyaml`):** the venv was made with a Python that's too new (3.14 or later). There's no ready-made install of that package for it, so pip tries to build it from source and needs a C compiler. Don't install a compiler; use Python 3.13 instead:
+
+```powershell
+deactivate
+Remove-Item -Recurse -Force .venv
+py -3.13 -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+**If `python detector.py` fails with `OSError: [WinError 126] ... Error loading "...\torch\lib\shm.dll" or one of its dependencies`:** torch is installed, but Windows is missing a Microsoft C++ library it needs (usually `vcomp140.dll`). Install or repair the Visual C++ Redistributable (x64):
+
+```powershell
+winget install Microsoft.VCRedist.2015+.x64
+```
+
+If winget says it's already installed, download it from https://aka.ms/vs/17/release/vc_redist.x64.exe and choose **Repair**. Then open a new terminal, activate the venv and run `python detector.py` again.
 
 The server is ready when it prints `loading model: gpt2 loaded and ready.` (GPT-2 is loaded at startup, so the first request isn't slow). It runs at `http://127.0.0.1:5000`. Check it's alive from a second terminal:
 

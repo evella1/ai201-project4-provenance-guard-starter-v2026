@@ -171,6 +171,10 @@ def handle_any_error(exc):
       and the details go to the audit log so the failure leaves a trace.
     """
     if isinstance(exc, HTTPException):
+        # Still leaves a trace: a caller probing unknown URLs or wrong methods
+        # would otherwise show up only as an absence.
+        _try_log_rejection(creator_id="unknown", reason=exc.name.lower().replace(" ", "_"),
+                           route=request.path, method=request.method, http_status=exc.code)
         return jsonify({"error": exc.name.lower().replace(" ", "_"),
                         "message": exc.description}), exc.code
 

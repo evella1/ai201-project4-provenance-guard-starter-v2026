@@ -930,6 +930,125 @@ I'd keep making the AI label hard to reach, so fewer honest writers get accused,
 4. When the audit log can't be written
 5. Instrument and deploy (later milestone)
 
+---
+
+## Instrumentation
+
+**Where:** `logs/audit.jsonl`, one JSON object per line, written by `audit.py`. It can be read back with `audit.read_entries()`, through the service with `GET /log?limit=N`, or by opening the file. Nothing is recorded with `print()`.
+
+**Every run writes a record.** Four kinds of entry, each with named fields:
+
+| Entry | When | Fields |
+|---|---|---|
+| decision (`status: decided`) | every scored submission | timestamp, content_id, creator_id, guess, model_score, style_score, combined_score, label, status, duration_ms, text_chars; plus degraded, degraded_reason, error_type when the model failed or timed out |
+| appeal (`event: appeal`) | every accepted appeal | timestamp, content_id, creator_id, status, reasoning, duration_ms |
+| rejection (`event: rejected`) | every refused request: bad input (400), unknown URL (404), wrong method (405), rate limit (429) | timestamp, creator_id, reason, route, duration_ms, text_chars; http_status and method for 404/405; limit for 429 |
+| error (`event: error`) | every unexpected crash (500) | timestamp, route, error_type, detail, duration_ms, text_chars |
+
+How the requirement's fields map to mine:
+- **timestamp:** `timestamp`, UTC, on every entry.
+- **input:** `text_chars`, the length of the submitted text, plus `creator_id`. The text itself is never logged, on purpose: that way nothing a caller sends can be written into my log (PI05 in the attack run).
+- **output:** `guess`, `label`, the three scores and the `content_id` the writer received. For a refused request, `reason` (the error code they got).
+- **duration:** `duration_ms`, from the moment the request arrives until it is logged. The clock starts before the rate limiter, so 429s are timed too.
+- **specific to my system:** both signal scores separately (so a wrong label can be traced to the signal that caused it), `degraded` and `degraded_reason` (whether the answer was a full check), `error_type`, and `status`, which shows where an item is in its life (decided → under_review).
+
+### Log entries from a real run
+
+Twelve consecutive entries from `logs/audit.jsonl`, copied as written. I started the real server (`python app.py`) and sent requests over HTTP: six submissions (three of my own texts, two AI texts, the forum post), one appeal, three bad inputs and an unknown URL. Then I restarted the server with `AI201_FAULT=model_slow` (GPT-2 takes 30 seconds) and sent one more submission.
+
+Six decisions, one per label group (my texts got unsure, the AI essays got AI, the forum post got human):
+
+```json
+{"timestamp": "2026-11-18T00:14:12+00:00", "content_id": "c_c7ecfae9ecf2", "creator_id": "instr_1", "guess": "unsure", "model_score": 0.8288, "style_score": 0.5322, "combined_score": 0.5322, "label": "We can't tell whether this was written by a person or with AI help. Parts of it read like both. This is not an accusation. If you wrote it yourself, you can tell us by appealing with your content ID.", "status": "decided", "duration_ms": 728.4, "text_chars": 430}
+{"timestamp": "2026-11-18T00:14:12+00:00", "content_id": "c_a1b7c58a9149", "creator_id": "instr_2", "guess": "unsure", "model_score": 0.5971, "style_score": 0.3114, "combined_score": 0.4542, "label": "We can't tell whether this was written by a person or with AI help. Parts of it read like both. This is not an accusation. If you wrote it yourself, you can tell us by appealing with your content ID.", "status": "decided", "duration_ms": 366.9, "text_chars": 422}
+{"timestamp": "2026-11-18T00:14:13+00:00", "content_id": "c_cd85d156b83a", "creator_id": "instr_3", "guess": "unsure", "model_score": 0.7457, "style_score": 0.482, "combined_score": 0.6139, "label": "We can't tell whether this was written by a person or with AI help. Parts of it read like both. This is not an accusation. If you wrote it yourself, you can tell us by appealing with your content ID.", "status": "decided", "duration_ms": 429.9, "text_chars": 567}
+{"timestamp": "2026-11-18T00:14:13+00:00", "content_id": "c_c2c2cb39781a", "creator_id": "instr_4", "guess": "ai", "model_score": 0.7969, "style_score": 0.7561, "combined_score": 0.7561, "label": "This text has patterns we often see in AI-generated writing. This is a guess, not proof, and we can be wrong. If you wrote it yourself, you can appeal using your content ID and a person will review it.", "status": "decided", "duration_ms": 509.8, "text_chars": 790}
+{"timestamp": "2026-11-18T00:14:14+00:00", "content_id": "c_6ab77a24acfe", "creator_id": "instr_5", "guess": "ai", "model_score": 0.7508, "style_score": 0.6857, "combined_score": 0.6857, "label": "This text has patterns we often see in AI-generated writing. This is a guess, not proof, and we can be wrong. If you wrote it yourself, you can appeal using your content ID and a person will review it.", "status": "decided", "duration_ms": 510.8, "text_chars": 761}
+{"timestamp": "2026-11-18T00:14:14+00:00", "content_id": "c_efa0ae5163f1", "creator_id": "instr_6", "guess": "human", "model_score": 0.3198, "style_score": 0.1324, "combined_score": 0.2261, "label": "We think this was probably written by a person.", "status": "decided", "duration_ms": 879.3, "text_chars": 919}
+```
+
+An appeal on the first one:
+
+```json
+{"timestamp": "2026-11-18T00:14:15+00:00", "content_id": "c_c7ecfae9ecf2", "creator_id": "instr_1", "event": "appeal", "status": "under_review", "reasoning": "I wrote this myself.", "duration_ms": 28.4}
+```
+
+**Failed runs.** Four rejected inputs (empty text, 25,000 characters, a two-letter text, an unknown URL) and one timeout:
+
+```json
+{"timestamp": "2026-11-18T00:14:15+00:00", "creator_id": "instr_bad", "event": "rejected", "status": "rejected", "reason": "bad_request", "route": "/submit", "duration_ms": 1.3, "text_chars": 3}
+{"timestamp": "2026-11-18T00:14:15+00:00", "creator_id": "instr_bad", "event": "rejected", "status": "rejected", "reason": "text_too_long", "route": "/submit", "duration_ms": 1.0, "text_chars": 25000}
+{"timestamp": "2026-11-18T00:14:15+00:00", "creator_id": "instr_bad", "event": "rejected", "status": "rejected", "reason": "text_too_short", "route": "/submit", "duration_ms": 1.8, "text_chars": 2}
+{"timestamp": "2026-11-18T00:14:15+00:00", "creator_id": "unknown", "event": "rejected", "status": "rejected", "reason": "not_found", "route": "/nope", "method": "GET", "http_status": 404, "duration_ms": 0.3}
+{"timestamp": "2026-11-18T00:15:01+00:00", "content_id": "c_7bc7a590495b", "creator_id": "instr_slow", "guess": "unsure", "model_score": null, "style_score": 0.5322, "combined_score": null, "label": "We couldn't fully check this text right now, so we can't say whether it was written by a person or with AI help. This is not an accusation. Please submit it again later for a full check.", "status": "decided", "degraded": true, "degraded_reason": "timeout", "error_type": "TimeoutError", "duration_ms": 10020.5, "text_chars": 430}
+```
+
+What the entries show:
+- The timeout is visible directly in `duration_ms`: 10,020 ms against 370–880 ms for a normal check. The writer still got an answer (degraded "unsure", and the client waited 11.1 s in total) and a content_id they can appeal with. The server terminal printed `ERROR in app: Detector took longer than 10s, answering in degraded mode`.
+- Rejections take 1–2 ms: they are refused before GPT-2 runs, so a bad input costs almost nothing.
+- `text_chars` explains each rejection without storing the text: 3 characters of whitespace, 25,000 characters (over the 20,000 limit), 2 characters (too short).
+- The scores are exactly the same as in unit 8 (0.5322, 0.4542, 0.6139, 0.7561, 0.2261), so adding the new fields changed nothing about how text is judged.
+
+**Failures leave a record too.** I tested every kind with `check_logging.py` (output in `results/logging_check_2026-11-18.md`). It runs the real app against a temporary log and causes each failure on purpose:
+
+| Case | Status | Log entry |
+|---|---|---|
+| normal submission | 200 | decision |
+| appeal | 200 | appeal |
+| empty text, too short, JSON array body | 400 | rejected, with the reason |
+| unknown URL / wrong method | 404 / 405 | rejected, with `http_status` |
+| one over the rate limit | 429 | rejected, `rate_limited` |
+| GPT-2 fails | 200, degraded "unsure" | decision with `degraded_reason: model_error`, `error_type: RuntimeError` |
+| unexpected crash | 500 | error, with `error_type` |
+| the log itself can't be written | 503 | **none, by necessity**: reported on the server terminal instead |
+
+Three entries from that run, copied from its output: a degraded decision, a crash and a rate limit:
+
+```json
+{"timestamp": "2026-11-18T00:09:39+00:00", "content_id": "c_3be57816dfb5", "creator_id": "chk_model", "guess": "unsure", "model_score": null, "style_score": 0.5, "combined_score": null, "label": "We couldn't fully check this text right now, so we can't say whether it was written by a person or with AI help. This is not an accusation. Please submit it again later for a full check.", "status": "decided", "degraded": true, "degraded_reason": "model_error", "error_type": "RuntimeError", "duration_ms": 6.3, "text_chars": 153}
+{"timestamp": "2026-11-18T00:09:39+00:00", "event": "error", "status": "error", "route": "/submit", "error_type": "RuntimeError", "detail": "simulated bug", "duration_ms": 160.3, "text_chars": 153}
+{"timestamp": "2026-11-18T00:09:39+00:00", "creator_id": "chk_flood", "event": "rejected", "status": "rejected", "reason": "rate_limited", "limit": "5 per 1 minute", "duration_ms": 1.2, "text_chars": 153}
+```
+
+**What's still not in the log:**
+- Bad appeals (400, 404 for an unknown content_id) are deliberately not logged, as criterion 4 requires.
+- When the log can't be written, the failure can only go to the server terminal. That's why the service refuses with a 503 instead of giving an answer nobody can check later.
+- Entries written before 2026-11-18 don't have `duration_ms` and `text_chars`, because the fields were added then.
+
+(The test text in the check is only two sentences, so the style signal returns 0.5 and it gets the AI label. That's the known short-text problem, not something the logging changed.)
+
+---
+
+## What It Costs
+
+**What the real cost is:** seconds of compute on my own laptop. There is no API, so there's no money spent per run and no tokens: GPT-2 runs locally. What a submission uses up is CPU time while GPT-2 reads the text.
+
+**The number:** one submission takes **0.52 seconds** (average of 10 runs, wall-clock time), and it keeps the processor busy for **1.85 seconds of CPU time** in that half second. CPU time is higher than wall time because torch spreads the work over 4 processor cores at once.
+
+| | Wall time | CPU time |
+|---|---|---|
+| Average of 10 runs | 520 ms | 1,855 ms |
+| Median | 482 ms | |
+| Fastest / slowest | 400 ms / 1,004 ms | |
+| One-time model load, at server start | 13.8 s | |
+
+The first run was the slowest (1.0 s): torch does some setup on its first real calculation. Runs 2–10 took 0.40–0.54 s.
+
+**How I measured it:** `measure_cost.py`, output saved in `results/cost_2026-11-18.md`.
+- It runs my real Flask app in-process (Flask's test client), so each run goes through the whole `/submit` route: input checks, GPT-2, the style signal, the combining rule, the label and the audit log write. Only the network trip is left out, which on my own machine is a few milliseconds.
+- The same text every time: the 87-word coffee shop text from my Sample Run, a typical short submission.
+- GPT-2 is loaded once before timing, like `python app.py` does at startup, so the 13.8-second load is counted separately instead of landing on run 1.
+- Per run, `time.perf_counter()` for wall time and `time.process_time()` for CPU time, before and after the request.
+- The audit log goes to a temporary file, so my real log isn't filled with test entries, and each run uses its own creator_id so the rate limit doesn't interfere.
+- Machine: my laptop, Intel Core 8th–10th generation (8 logical CPUs), 15.8 GB memory, Python 3.13, torch 2.15 (CPU only).
+
+**The same number in the audit log:** every log entry now has `duration_ms` (how long the request took) and `text_chars` (how long the text was, without storing the text). So the cost of every real run can be read back from `logs/audit.jsonl`, not only from this test.
+
+**What it means in practice:**
+- One writer at the daily limit (50 submissions) costs about 26 seconds of compute a day.
+- The detector only reads the first 400 tokens of a text, so a long text doesn't cost much more than a short one. I measured only the 87-word text, so I'm not claiming a number for the longest allowed text.
+- A run that times out costs much more: the writer waits the full 10 seconds, and GPT-2 keeps working in the background after that. In a test where the model wasn't loaded in advance, the first submission timed out and was logged with `duration_ms: 10057.7`.
+
 <!-- ═════════════════════════════════════════════════════════════════════
 
      SUBMISSION CHECKLIST — unit 7
