@@ -1084,97 +1084,78 @@ The first run was the slowest (1.0 s): torch does some setup on its first real c
 
 ## Extension Run Log
 
-The five capstone criteria from `criteria.md`, three runs each. Produced by `run_capstone.py::main`, which sends every request through the real routes (`app.py::submit` and `app.py::appeal`) with Flask's test client, switches each fault with `config.FAULT`, and writes the audit log to a temporary file. Each run uses its own creator_ids. Full output: `results/capstone_2026-11-21_0430_extension.md`.
+Three separate runs of `run_capstone.py --trials 1` (`run_capstone.py::main`). Each run started a fresh process with a fresh audit log and its own creator_ids. Every request goes through the real routes, `app.py::submit` and `app.py::appeal`, with Flask's test client, and each fault is switched with `config.FAULT`. Saved output: `results/capstone_2026-11-21_0440_run1.md`, `results/capstone_2026-11-21_0443_run2.md`, `results/capstone_2026-11-21_0446_run3.md`.
 
 | Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
 |---|---|---|---|---|---|
-| 1. Model failure | 10 of 10 degraded "unsure", 0 × 500, each logged as degraded; too-short text still a 400 | 10/10, too-short → 200 | 10/10, too-short → 200 | 10/10, too-short → 200 | MISSED |
-| 2. Slow model | 10 of 10 answer within 12 s, degraded, reason `timeout` | 10/10 (slowest 10.1 s) | 10/10 (slowest 10.0 s) | 10/10 (slowest 10.0 s) | MET |
-| 3. Log failure | 10 of 10 JSON 503, no content_id, reported on the console | 10/10 | 10/10 | 10/10 | MET |
-| 4. No HTML errors | 0 HTML pages | 72/72 JSON | 72/72 JSON | 72/72 JSON | MET |
-| 5. Nothing else changes | 10 of 10 same scores and labels as unit 8 | 10/10 | 10/10 | 10/10 | MET |
+| 1. Model failure gives degraded "unsure", too-short text still a 400 | 11 of 11 | 10/11 | 10/11 | 10/11 | MISSED |
+| 2. Slow model answers within 12 s as degraded "unsure" | 10 of 10 | 10/10 | 10/10 | 10/10 | MET |
+| 3. Log failure returns a JSON 503 with no content ID | 10 of 10 | 10/10 | 10/10 | 10/10 | MET |
+| 4. Every error is JSON, never an HTML page | 72 of 72 | 72/72 | 72/72 | 72/72 | MET |
+| 5. Scores and labels unchanged from unit 8 | 10 of 10 | 10/10 | 10/10 | 10/10 | MET |
 
-All three runs gave the same result. The degraded answers and the 503s don't depend on GPT-2's output, and GPT-2 scores the same text the same way every time.
+Criterion 1 counts 11 checks per run: the 10 submissions (all passed) and the two-letter text, which got a 200 instead of a 400.
 
-**Real output from run 1.** These are the per-request results `run_capstone.py` recorded from each response and log entry. It saves the fields it checks, not the full response bodies, so full responses and log lines from the same code paths are under Instrumentation.
+**Real output from run 1** (`results/capstone_2026-11-21_0440_run1.md`).
 
-**Criterion 1**, produced by `run_capstone.py::c1_model_failure` (with `config.FAULT = "model_error"`). Ten submissions, then a two-letter text:
+**Criterion 1**, produced by `run_capstone.py::c1_model_failure` with `config.FAULT = "model_error"`. The response from `app.py::submit` (HTTP 200) for submission 1, and its log entry written by `audit.py::log_decision`:
 
 ```json
-{"n": 1, "status": 200, "guess": "unsure", "degraded": true, "reason": "model_error", "model_score": null, "logged_degraded": true, "pass": true}
-{"n": 2, "status": 200, "guess": "unsure", "degraded": true, "reason": "model_error", "model_score": null, "logged_degraded": true, "pass": true}
-{"n": 3, "status": 200, "guess": "unsure", "degraded": true, "reason": "model_error", "model_score": null, "logged_degraded": true, "pass": true}
-{"n": 4, "status": 200, "guess": "unsure", "degraded": true, "reason": "model_error", "model_score": null, "logged_degraded": true, "pass": true}
-{"n": 5, "status": 200, "guess": "unsure", "degraded": true, "reason": "model_error", "model_score": null, "logged_degraded": true, "pass": true}
-{"n": 6, "status": 200, "guess": "unsure", "degraded": true, "reason": "model_error", "model_score": null, "logged_degraded": true, "pass": true}
-{"n": 7, "status": 200, "guess": "unsure", "degraded": true, "reason": "model_error", "model_score": null, "logged_degraded": true, "pass": true}
-{"n": 8, "status": 200, "guess": "unsure", "degraded": true, "reason": "model_error", "model_score": null, "logged_degraded": true, "pass": true}
-{"n": 9, "status": 200, "guess": "unsure", "degraded": true, "reason": "model_error", "model_score": null, "logged_degraded": true, "pass": true}
-{"n": 10, "status": 200, "guess": "unsure", "degraded": true, "reason": "model_error", "model_score": null, "logged_degraded": true, "pass": true}
-{"too_short_under_fault": {"status": 200, "error": null, "guess": "unsure"}}
+{"confidence": null, "content_id": "c_5114e3679cf1", "creator_id": "cap1_c1_1", "degraded": true, "degraded_reason": "model_error", "guess": "unsure", "label": "We couldn't fully check this text right now, so we can't say whether it was written by a person or with AI help. This is not an accusation. Please submit it again later for a full check.", "model_score": null, "style_score": 0.5322}
 ```
 
-**Why criterion 1 is missed:** the ten submissions all pass, but the two-letter text gets a 200 degraded answer, not the 400 my criterion promises. Stage: the route, through the detector. The fault fires at the top of `detector.model_signal`, before `detector.perplexity` counts the tokens, so with the model broken nothing ever checks the length. That matches a real failure: if GPT-2 can't load, its tokenizer may not be there to count tokens either. The writer isn't harmed (they get "unsure" and "please submit again later", not an accusation), but the promise in the criterion doesn't hold.
-
-**Criterion 2**, produced by `run_capstone.py::c2_slow_model` (with `config.FAULT = "model_slow"`, GPT-2 taking 30 seconds):
-
 ```json
-{"n": 1, "seconds": 10.02, "status": 200, "guess": "unsure", "reason": "timeout", "pass": true}
-{"n": 2, "seconds": 10.0, "status": 200, "guess": "unsure", "reason": "timeout", "pass": true}
-{"n": 3, "seconds": 10.01, "status": 200, "guess": "unsure", "reason": "timeout", "pass": true}
-{"n": 4, "seconds": 10.02, "status": 200, "guess": "unsure", "reason": "timeout", "pass": true}
-{"n": 5, "seconds": 10.03, "status": 200, "guess": "unsure", "reason": "timeout", "pass": true}
-{"n": 6, "seconds": 10.02, "status": 200, "guess": "unsure", "reason": "timeout", "pass": true}
-{"n": 7, "seconds": 10.02, "status": 200, "guess": "unsure", "reason": "timeout", "pass": true}
-{"n": 8, "seconds": 10.02, "status": 200, "guess": "unsure", "reason": "timeout", "pass": true}
-{"n": 9, "seconds": 10.05, "status": 200, "guess": "unsure", "reason": "timeout", "pass": true}
-{"n": 10, "seconds": 10.02, "status": 200, "guess": "unsure", "reason": "timeout", "pass": true}
+{"timestamp": "2026-11-20T21:38:52+00:00", "content_id": "c_5114e3679cf1", "creator_id": "cap1_c1_1", "guess": "unsure", "model_score": null, "style_score": 0.5322, "combined_score": null, "label": "We couldn't fully check this text right now, so we can't say whether it was written by a person or with AI help. This is not an accusation. Please submit it again later for a full check.", "status": "decided", "degraded": true, "degraded_reason": "model_error", "error_type": "RuntimeError", "duration_ms": 10.6, "text_chars": 430}
 ```
 
-**Criterion 3**, produced by `run_capstone.py::c3_log_failure` (with `config.FAULT = "log_error"`). It also counts the console error messages from `app.py::_log_unavailable` and the lines added to the audit log:
+The two-letter text `"hi"` under the same fault (HTTP 200):
 
 ```json
-{"n": 1, "status": 503, "json": true, "content_id": null, "pass": true}
-{"n": 2, "status": 503, "json": true, "content_id": null, "pass": true}
-{"n": 3, "status": 503, "json": true, "content_id": null, "pass": true}
-{"n": 4, "status": 503, "json": true, "content_id": null, "pass": true}
-{"n": 5, "status": 503, "json": true, "content_id": null, "pass": true}
-{"n": 6, "status": 503, "json": true, "content_id": null, "pass": true}
-{"n": 7, "status": 503, "json": true, "content_id": null, "pass": true}
-{"n": 8, "status": 503, "json": true, "content_id": null, "pass": true}
-{"n": 9, "status": 503, "json": true, "content_id": null, "pass": true}
-{"n": 10, "status": 503, "json": true, "content_id": null, "pass": true}
-{"console_reports": 10}
-{"new_log_lines": 0}
+{"confidence": null, "content_id": "c_de2c5078e0d8", "creator_id": "cap1_c1_short", "degraded": true, "degraded_reason": "model_error", "guess": "unsure", "label": "We couldn't fully check this text right now, so we can't say whether it was written by a person or with AI help. This is not an accusation. Please submit it again later for a full check.", "model_score": null, "style_score": 0.5}
 ```
 
-**Criterion 4**, produced by `run_capstone.py::c4_no_html`. 72 requests: the full attack set (from `run_attacks.py::load_attacks`), 7 rapid submissions from one creator (to get 429s), five bad appeals (JSON array, unparseable JSON, empty body, `creator_id` as an object, unknown content_id), an unknown URL, `GET /submit`, `GET /appeal` and `PUT /submit`. Any response that isn't JSON is listed in `non_json`:
+**Criterion 2**, produced by `run_capstone.py::c2_slow_model` with `config.FAULT = "model_slow"`. Submission 1 answered after 10.02 s (HTTP 200); the response from `app.py::submit` and the log entry from `audit.py::log_decision`:
 
 ```json
-{"non_json": []}
-{"requests": 72}
-{"status_500": 0}
+{"confidence": null, "content_id": "c_fae4a868e4e5", "creator_id": "cap1_c2_1", "degraded": true, "degraded_reason": "timeout", "guess": "unsure", "label": "We couldn't fully check this text right now, so we can't say whether it was written by a person or with AI help. This is not an accusation. Please submit it again later for a full check.", "model_score": null, "style_score": 0.5322}
 ```
 
-**Criterion 5**, produced by `run_capstone.py::c5_nothing_changes` (no fault), compared with trial 1 of "my own writing" in `results/run_2026-11-15_1427_after.md`. `same` means guess, combined score, model score and style score are all identical:
-
 ```json
-{"n": 1, "guess": "unsure", "confidence": 0.5322, "unit8_guess": "unsure", "unit8_confidence": 0.5322, "same": true}
-{"n": 2, "guess": "unsure", "confidence": 0.4542, "unit8_guess": "unsure", "unit8_confidence": 0.4542, "same": true}
-{"n": 3, "guess": "unsure", "confidence": 0.6139, "unit8_guess": "unsure", "unit8_confidence": 0.6139, "same": true}
-{"n": 4, "guess": "unsure", "confidence": 0.4865, "unit8_guess": "unsure", "unit8_confidence": 0.4865, "same": true}
-{"n": 5, "guess": "unsure", "confidence": 0.5166, "unit8_guess": "unsure", "unit8_confidence": 0.5166, "same": true}
-{"n": 6, "guess": "unsure", "confidence": 0.5556, "unit8_guess": "unsure", "unit8_confidence": 0.5556, "same": true}
-{"n": 7, "guess": "human", "confidence": 0.3144, "unit8_guess": "human", "unit8_confidence": 0.3144, "same": true}
-{"n": 8, "guess": "unsure", "confidence": 0.5082, "unit8_guess": "unsure", "unit8_confidence": 0.5082, "same": true}
-{"n": 9, "guess": "unsure", "confidence": 0.3574, "unit8_guess": "unsure", "unit8_confidence": 0.3574, "same": true}
-{"n": 10, "guess": "unsure", "confidence": 0.5543, "unit8_guess": "unsure", "unit8_confidence": 0.5543, "same": true}
+{"timestamp": "2026-11-20T21:39:24+00:00", "content_id": "c_fae4a868e4e5", "creator_id": "cap1_c2_1", "guess": "unsure", "model_score": null, "style_score": 0.5322, "combined_score": null, "label": "We couldn't fully check this text right now, so we can't say whether it was written by a person or with AI help. This is not an accusation. Please submit it again later for a full check.", "status": "decided", "degraded": true, "degraded_reason": "timeout", "error_type": "TimeoutError", "duration_ms": 10011.5, "text_chars": 430}
 ```
 
-**The same failures through the real server.** One timeout from `python app.py` started with `AI201_FAULT=model_slow`, as written by `audit.py::log_decision` to `logs/audit.jsonl` (also shown under Instrumentation):
+**Criterion 3**, produced by `run_capstone.py::c3_log_failure` with `config.FAULT = "log_error"`. The response from `app.py::submit` (HTTP 503) for submission 1, and the console message written by `app.py::_log_unavailable` (no log entry, because the log is what failed):
 
 ```json
-{"timestamp": "2026-11-18T00:15:01+00:00", "content_id": "c_7bc7a590495b", "creator_id": "instr_slow", "guess": "unsure", "model_score": null, "style_score": 0.5322, "combined_score": null, "label": "We couldn't fully check this text right now, so we can't say whether it was written by a person or with AI help. This is not an accusation. Please submit it again later for a full check.", "status": "decided", "degraded": true, "degraded_reason": "timeout", "error_type": "TimeoutError", "duration_ms": 10020.5, "text_chars": 430}
+{"error": "service_unavailable", "message": "We couldn't save this result, so we can't give you one right now. Please try again in a few minutes."}
+```
+
+```
+ERROR in app: Could not write a decision to the audit log
+```
+
+**Criterion 4**, produced by `run_capstone.py::c4_no_html`. 72 requests: the attack set, 7 rapid submissions from one creator, bad appeals, an unknown URL and wrong methods. 0 responses weren't JSON and 0 were a 500. A selection of the responses, from `app.py::submit`, `app.py::appeal`, `app.py::rate_limited` and `app.py::handle_any_error`:
+
+```json
+{"request": "attack MF02", "status": 400, "json": true, "response": {"error": "text_too_short", "message": "Text is too short to check. Please send at least a few sentences."}}
+{"request": "attack RQ07", "status": 400, "json": true, "response": {"error": "bad_request", "message": "Send a JSON object, like {\"text\": \"...\"}."}}
+{"request": "flood 6", "status": 429, "json": true, "response": {"error": "rate_limited", "limit": "5 per 1 minute", "message": "Too many submissions. Try again shortly."}}
+{"request": "/appeal JSON array", "status": 400, "json": true, "response": {"error": "bad_request", "message": "Send a JSON object, like {\"content_id\": \"...\", \"reasoning\": \"...\"}."}}
+{"request": "/appeal creator_id object", "status": 400, "json": true, "response": {"error": "bad_request", "message": "\"creator_id\" must be a non-empty string."}}
+{"request": "/appeal unknown content_id", "status": 404, "json": true, "response": {"error": "not_found", "message": "We couldn't find a submission with content ID c_000000000000. Please check the ID from your original result."}}
+{"request": "GET /nope", "status": 404, "json": true, "response": {"error": "not_found", "message": "The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again."}}
+{"request": "GET /submit", "status": 405, "json": true, "response": {"error": "method_not_allowed", "message": "The method is not allowed for the requested URL."}}
+{"request": "PUT /submit", "status": 405, "json": true, "response": {"error": "method_not_allowed", "message": "The method is not allowed for the requested URL."}}
+```
+
+**Criterion 5**, produced by `run_capstone.py::c5_nothing_changes` with no fault. The response from `app.py::submit` for text 1 and its log entry from `audit.py::log_decision`. Unit 8 gave this text guess "unsure", confidence 0.5322, model 0.8288, style 0.5322 (`results/run_2026-11-15_1427_after.md`):
+
+```json
+{"confidence": 0.5322, "content_id": "c_e6344519c940", "creator_id": "cap1_c5_1", "degraded": false, "guess": "unsure", "label": "We can't tell whether this was written by a person or with AI help. Parts of it read like both. This is not an accusation. If you wrote it yourself, you can tell us by appealing with your content ID.", "model_score": 0.8288, "style_score": 0.5322}
+```
+
+```json
+{"timestamp": "2026-11-20T21:38:47+00:00", "content_id": "c_e6344519c940", "creator_id": "cap1_c5_1", "guess": "unsure", "model_score": 0.8288, "style_score": 0.5322, "combined_score": 0.5322, "label": "We can't tell whether this was written by a person or with AI help. Parts of it read like both. This is not an accusation. If you wrote it yourself, you can tell us by appealing with your content ID.", "status": "decided", "duration_ms": 828.3, "text_chars": 430}
 ```
 
 <!-- ═════════════════════════════════════════════════════════════════════
