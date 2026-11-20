@@ -911,6 +911,36 @@ I'd keep making the AI label hard to reach, so fewer honest writers get accused,
 
 ---
 
+## What This Extends
+
+**The system:** Provenance Guard (Unit 7-8).
+
+**What was already there:**  A writer sends text to `/submit`, two signals score it (GPT-2 predictability and writing style), the combined score becomes one of three labels (human, unsure, AI), every decision goes to an audit log, and a wrongly labelled writer can appeal through `/appeal`.
+-the two signals
+-the combining rule
+-the labels
+-the appeal path, rate limiting
+-the input checks added in unit 8. 
+
+**What's new: what happens when the service's own parts fail** (extension B, "Harden against failure"):
+
+| New | What it does |
+|---|---|
+| Fault switch (`AI201_FAULT`) | makes GPT-2 fail, GPT-2 slow, or the audit log unwritable on purpose, so each failure can be tested on demand |
+| JSON for every error | a catch-all error handler: an unexpected crash returns a JSON 500 instead of an HTML debug page, and is logged. Unknown URLs and wrong methods are JSON too |
+| Degraded mode | when GPT-2 fails, the writer still gets an answer: always "unsure", with a label saying the text couldn't be fully checked. Logged as degraded, with the reason |
+| Time limit on GPT-2 | after 10 seconds, the service stops waiting and answers in degraded mode (reason `timeout`). GPT-2 now loads when the server starts |
+| Log failure → 503 | if the decision can't be saved, the service refuses with a 503 and gives no content ID, because an unsaved decision can't be appealed |
+| Structured logging | every log entry now also has `duration_ms` and `text_chars`, and 404/405 answers leave a record (see Instrumentation) |
+| Cost measurement | `measure_cost.py`: one submission costs 0.52 s of compute on my laptop (see What It Costs) |
+| Checks I can rerun | `check_logging.py` (every kind of failure leaves a record) and `run_capstone.py` (the five capstone criteria, three trials) |
+| Run path | `RUNNING.md`: local, with logs, tested by cloning my own repo. The fixes for what failed are written in |
+| Fixes from feedback | `/appeal` now rejects a `creator_id` that isn't a string (the RQ06 bug, found in its sibling), `RATE_LIMITING_ENABLED` is a real boolean, and "too short" has its own error type, so no other error can be mistaken for it |
+
+**What didn't change:** how text is judged. The signals, the combining rule, the thresholds and the labels are the same as in unit 8, and my own texts get exactly the same scores. The judgment problems (non-English text, the criterion 2 gap, PI02 and EV05) are still in "What's Still Broken".
+
+---
+
 ## The Shape
 
 **B: Harden against failure.** My service works when everything goes right, but it has never been tested when one of its own parts fails. If GPT-2 can't load or throws an error, every submission crashes with a 500 and an HTML debug page. If the detector is slow, the writer just waits. If the audit log can't be written, the decision is lost after all the scoring work is done. And `/appeal` still crashes on a JSON array body, the same bug RQ07 found in `/submit`. I'm adding failure handling for these cases: a JSON error instead of a crash for anything unexpected, a time limit on the detector, a clear answer when the log can't be written, and a "degraded mode" for when the model signal fails. In degraded mode the service always answers "unsure", with a label saying the text couldn't be fully checked right now, and logs the decision as degraded. I chose this over scoring with the style signal alone: my tests showed the style signal is the weaker one and easy to fool (the AI ramen review scored 0.35 on it, right on the human line), so on its own it could clear AI text as human. "Unsure" never accuses a writer and never claims something the service couldn't check. To prove each case works, I'll add a setting that makes the failure happen on purpose, and every failure will leave an entry in the audit log.
@@ -1045,9 +1075,107 @@ The first run was the slowest (1.0 s): torch does some setup on its first real c
 **The same number in the audit log:** every log entry now has `duration_ms` (how long the request took) and `text_chars` (how long the text was, without storing the text). So the cost of every real run can be read back from `logs/audit.jsonl`, not only from this test.
 
 **What it means in practice:**
+- **A hundred runs a day:** about 52 seconds of wall time (100 × 0.52 s), keeping the processor busy for about 3 minutes of CPU time (100 × 1.85 s), plus one 13.8-second model load when the server starts. API spend is $0, because nothing is hosted, and 3 CPU-minutes of electricity on a laptop is negligible. My rate limit allows 50 a day per writer, so 100 a day means at least two writers; the cost depends on the total number of submissions, not on who sends them.
 - One writer at the daily limit (50 submissions) costs about 26 seconds of compute a day.
 - The detector only reads the first 400 tokens of a text, so a long text doesn't cost much more than a short one. I measured only the 87-word text, so I'm not claiming a number for the longest allowed text.
 - A run that times out costs much more: the writer waits the full 10 seconds, and GPT-2 keeps working in the background after that. In a test where the model wasn't loaded in advance, the first submission timed out and was logged with `duration_ms: 10057.7`.
+
+---
+
+## Extension Run Log
+
+The five capstone criteria from `criteria.md`, three runs each. Produced by `run_capstone.py::main`, which sends every request through the real routes (`app.py::submit` and `app.py::appeal`) with Flask's test client, switches each fault with `config.FAULT`, and writes the audit log to a temporary file. Each run uses its own creator_ids. Full output: `results/capstone_2026-11-21_0430_extension.md`.
+
+| Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
+|---|---|---|---|---|---|
+| 1. Model failure | 10 of 10 degraded "unsure", 0 × 500, each logged as degraded; too-short text still a 400 | 10/10, too-short → 200 | 10/10, too-short → 200 | 10/10, too-short → 200 | MISSED |
+| 2. Slow model | 10 of 10 answer within 12 s, degraded, reason `timeout` | 10/10 (slowest 10.1 s) | 10/10 (slowest 10.0 s) | 10/10 (slowest 10.0 s) | MET |
+| 3. Log failure | 10 of 10 JSON 503, no content_id, reported on the console | 10/10 | 10/10 | 10/10 | MET |
+| 4. No HTML errors | 0 HTML pages | 72/72 JSON | 72/72 JSON | 72/72 JSON | MET |
+| 5. Nothing else changes | 10 of 10 same scores and labels as unit 8 | 10/10 | 10/10 | 10/10 | MET |
+
+All three runs gave the same result. The degraded answers and the 503s don't depend on GPT-2's output, and GPT-2 scores the same text the same way every time.
+
+**Real output from run 1.** These are the per-request results `run_capstone.py` recorded from each response and log entry. It saves the fields it checks, not the full response bodies, so full responses and log lines from the same code paths are under Instrumentation.
+
+**Criterion 1**, produced by `run_capstone.py::c1_model_failure` (with `config.FAULT = "model_error"`). Ten submissions, then a two-letter text:
+
+```json
+{"n": 1, "status": 200, "guess": "unsure", "degraded": true, "reason": "model_error", "model_score": null, "logged_degraded": true, "pass": true}
+{"n": 2, "status": 200, "guess": "unsure", "degraded": true, "reason": "model_error", "model_score": null, "logged_degraded": true, "pass": true}
+{"n": 3, "status": 200, "guess": "unsure", "degraded": true, "reason": "model_error", "model_score": null, "logged_degraded": true, "pass": true}
+{"n": 4, "status": 200, "guess": "unsure", "degraded": true, "reason": "model_error", "model_score": null, "logged_degraded": true, "pass": true}
+{"n": 5, "status": 200, "guess": "unsure", "degraded": true, "reason": "model_error", "model_score": null, "logged_degraded": true, "pass": true}
+{"n": 6, "status": 200, "guess": "unsure", "degraded": true, "reason": "model_error", "model_score": null, "logged_degraded": true, "pass": true}
+{"n": 7, "status": 200, "guess": "unsure", "degraded": true, "reason": "model_error", "model_score": null, "logged_degraded": true, "pass": true}
+{"n": 8, "status": 200, "guess": "unsure", "degraded": true, "reason": "model_error", "model_score": null, "logged_degraded": true, "pass": true}
+{"n": 9, "status": 200, "guess": "unsure", "degraded": true, "reason": "model_error", "model_score": null, "logged_degraded": true, "pass": true}
+{"n": 10, "status": 200, "guess": "unsure", "degraded": true, "reason": "model_error", "model_score": null, "logged_degraded": true, "pass": true}
+{"too_short_under_fault": {"status": 200, "error": null, "guess": "unsure"}}
+```
+
+**Why criterion 1 is missed:** the ten submissions all pass, but the two-letter text gets a 200 degraded answer, not the 400 my criterion promises. Stage: the route, through the detector. The fault fires at the top of `detector.model_signal`, before `detector.perplexity` counts the tokens, so with the model broken nothing ever checks the length. That matches a real failure: if GPT-2 can't load, its tokenizer may not be there to count tokens either. The writer isn't harmed (they get "unsure" and "please submit again later", not an accusation), but the promise in the criterion doesn't hold.
+
+**Criterion 2**, produced by `run_capstone.py::c2_slow_model` (with `config.FAULT = "model_slow"`, GPT-2 taking 30 seconds):
+
+```json
+{"n": 1, "seconds": 10.02, "status": 200, "guess": "unsure", "reason": "timeout", "pass": true}
+{"n": 2, "seconds": 10.0, "status": 200, "guess": "unsure", "reason": "timeout", "pass": true}
+{"n": 3, "seconds": 10.01, "status": 200, "guess": "unsure", "reason": "timeout", "pass": true}
+{"n": 4, "seconds": 10.02, "status": 200, "guess": "unsure", "reason": "timeout", "pass": true}
+{"n": 5, "seconds": 10.03, "status": 200, "guess": "unsure", "reason": "timeout", "pass": true}
+{"n": 6, "seconds": 10.02, "status": 200, "guess": "unsure", "reason": "timeout", "pass": true}
+{"n": 7, "seconds": 10.02, "status": 200, "guess": "unsure", "reason": "timeout", "pass": true}
+{"n": 8, "seconds": 10.02, "status": 200, "guess": "unsure", "reason": "timeout", "pass": true}
+{"n": 9, "seconds": 10.05, "status": 200, "guess": "unsure", "reason": "timeout", "pass": true}
+{"n": 10, "seconds": 10.02, "status": 200, "guess": "unsure", "reason": "timeout", "pass": true}
+```
+
+**Criterion 3**, produced by `run_capstone.py::c3_log_failure` (with `config.FAULT = "log_error"`). It also counts the console error messages from `app.py::_log_unavailable` and the lines added to the audit log:
+
+```json
+{"n": 1, "status": 503, "json": true, "content_id": null, "pass": true}
+{"n": 2, "status": 503, "json": true, "content_id": null, "pass": true}
+{"n": 3, "status": 503, "json": true, "content_id": null, "pass": true}
+{"n": 4, "status": 503, "json": true, "content_id": null, "pass": true}
+{"n": 5, "status": 503, "json": true, "content_id": null, "pass": true}
+{"n": 6, "status": 503, "json": true, "content_id": null, "pass": true}
+{"n": 7, "status": 503, "json": true, "content_id": null, "pass": true}
+{"n": 8, "status": 503, "json": true, "content_id": null, "pass": true}
+{"n": 9, "status": 503, "json": true, "content_id": null, "pass": true}
+{"n": 10, "status": 503, "json": true, "content_id": null, "pass": true}
+{"console_reports": 10}
+{"new_log_lines": 0}
+```
+
+**Criterion 4**, produced by `run_capstone.py::c4_no_html`. 72 requests: the full attack set (from `run_attacks.py::load_attacks`), 7 rapid submissions from one creator (to get 429s), five bad appeals (JSON array, unparseable JSON, empty body, `creator_id` as an object, unknown content_id), an unknown URL, `GET /submit`, `GET /appeal` and `PUT /submit`. Any response that isn't JSON is listed in `non_json`:
+
+```json
+{"non_json": []}
+{"requests": 72}
+{"status_500": 0}
+```
+
+**Criterion 5**, produced by `run_capstone.py::c5_nothing_changes` (no fault), compared with trial 1 of "my own writing" in `results/run_2026-11-15_1427_after.md`. `same` means guess, combined score, model score and style score are all identical:
+
+```json
+{"n": 1, "guess": "unsure", "confidence": 0.5322, "unit8_guess": "unsure", "unit8_confidence": 0.5322, "same": true}
+{"n": 2, "guess": "unsure", "confidence": 0.4542, "unit8_guess": "unsure", "unit8_confidence": 0.4542, "same": true}
+{"n": 3, "guess": "unsure", "confidence": 0.6139, "unit8_guess": "unsure", "unit8_confidence": 0.6139, "same": true}
+{"n": 4, "guess": "unsure", "confidence": 0.4865, "unit8_guess": "unsure", "unit8_confidence": 0.4865, "same": true}
+{"n": 5, "guess": "unsure", "confidence": 0.5166, "unit8_guess": "unsure", "unit8_confidence": 0.5166, "same": true}
+{"n": 6, "guess": "unsure", "confidence": 0.5556, "unit8_guess": "unsure", "unit8_confidence": 0.5556, "same": true}
+{"n": 7, "guess": "human", "confidence": 0.3144, "unit8_guess": "human", "unit8_confidence": 0.3144, "same": true}
+{"n": 8, "guess": "unsure", "confidence": 0.5082, "unit8_guess": "unsure", "unit8_confidence": 0.5082, "same": true}
+{"n": 9, "guess": "unsure", "confidence": 0.3574, "unit8_guess": "unsure", "unit8_confidence": 0.3574, "same": true}
+{"n": 10, "guess": "unsure", "confidence": 0.5543, "unit8_guess": "unsure", "unit8_confidence": 0.5543, "same": true}
+```
+
+**The same failures through the real server.** One timeout from `python app.py` started with `AI201_FAULT=model_slow`, as written by `audit.py::log_decision` to `logs/audit.jsonl` (also shown under Instrumentation):
+
+```json
+{"timestamp": "2026-11-18T00:15:01+00:00", "content_id": "c_7bc7a590495b", "creator_id": "instr_slow", "guess": "unsure", "model_score": null, "style_score": 0.5322, "combined_score": null, "label": "We couldn't fully check this text right now, so we can't say whether it was written by a person or with AI help. This is not an accusation. Please submit it again later for a full check.", "status": "decided", "degraded": true, "degraded_reason": "timeout", "error_type": "TimeoutError", "duration_ms": 10020.5, "text_chars": 430}
+```
 
 <!-- ═════════════════════════════════════════════════════════════════════
 
