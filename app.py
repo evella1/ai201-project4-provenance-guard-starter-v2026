@@ -344,6 +344,16 @@ def submit():
         return _reject(creator_id, "text_too_long",
                        f"Text is over {config.MAX_TEXT_CHARS:,} characters. Please send a shorter piece.")
 
+    # Check 3b (capstone criterion 1) - too short, checked HERE, before GPT-2.
+    # The detector's own check needs the model's tokenizer, so when GPT-2 was
+    # broken nothing checked the length and "hi" got a degraded answer instead
+    # of a 400. A word is always at least one GPT-2 token, so fewer than
+    # MIN_WORDS words catches everything the detector would refuse, without
+    # needing the model. detector.TextTooShort stays as a backstop.
+    if len(text.split()) < config.MIN_WORDS:
+        return _reject(creator_id, "text_too_short",
+                       "Text is too short to check. Please send at least a few sentences.")
+
     # Step 3 - one real signal that we first tested from the terminal
     # python detector.py "some text"
     import detector

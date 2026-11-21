@@ -50,6 +50,10 @@ DETECTOR_MAX_TOKENS = 400
 # above this, and the detector only reads the first ~300 words anyway.
 MAX_TEXT_CHARS = 20_000
 
+# The shortest text /submit accepts, in words, checked before GPT-2 runs. The
+# detector needs at least 3 tokens, and a word is always at least one token.
+MIN_WORDS = 3
+
 
 # ─── Fault injection ─────────────────────────────────────────────────────────
 # A switch that makes a part of the service fail ON PURPOSE, so I can prove
