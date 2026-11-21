@@ -889,6 +889,7 @@ The failures that are left come from the signals, not the route, so this change 
      what you'd do, and why you stopped. -->
 
 **Text that isn't English writing gets a confident label: MF03, MF04, MF05, MF06, MF07.** Still the worst problem: the Arabic text (MF07) is a real writer labelled AI.
+- **Update (extension):** MF05 and MF06 are fixed. The extension's "too short" check (fewer than 3 words → 400, before GPT-2 runs) now refuses both, so they moved from BROKE to HELD (see "Extension Run Log — After"). MF03, MF04 and MF07 are still broken.
 - What I'd do: count how much of the text is English words before scoring. If there are too few, return unsure ("we can't check this kind of text") instead of a score. A second, simpler fix: make the combining rule never return AI when the style signal had nothing to measure (exactly 0.5).
 - Why I stopped: I'd have to choose what counts as "enough English", and a wrong cut-off would push real English writers with names, numbers or code into unsure. I wanted one clean improvement I could prove with the runs, and this needs its own testing on non-English and mixed-language text.
 
@@ -1182,6 +1183,109 @@ This isn't only a quirk of my fault switch. In a real failure, for example GPT-2
 **What I'm not doing:** rewording the criterion to "too-short text gets a 400 when no fault is on". That would make it pass without fixing anything, and the course rules say a missed target stays and gets a fix attempted.
 
 **How I'll check it (After):** the same three separate runs of `run_capstone.py --trials 1` and the same table. I'll also run the attack set to confirm that MF05 changes and that no other attack gets worse.
+
+---
+
+## Extension Run Log — After
+
+The same three separate runs of `run_capstone.py --trials 1` (`run_capstone.py::main`), after the improvement: the "too short" check moved into `app.py::submit`, before GPT-2 runs (`MIN_WORDS = 3` in `config.py`). Everything else is the same as Before: a fresh process and audit log per run, its own creator_ids, the real routes through Flask's test client, and faults switched with `config.FAULT`. Saved output: `results/capstone_2026-11-21_1050_after_run1.md`, `results/capstone_2026-11-21_1053_after_run2.md`, `results/capstone_2026-11-21_1055_after_run3.md`.
+
+| Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
+|---|---|---|---|---|---|
+| 1. Model failure gives degraded "unsure", too-short text still a 400 | 11 of 11 | 11/11 | 11/11 | 11/11 | MET |
+| 2. Slow model answers within 12 s as degraded "unsure" | 10 of 10 | 10/10 | 10/10 | 10/10 | MET |
+| 3. Log failure returns a JSON 503 with no content ID | 10 of 10 | 10/10 | 10/10 | 10/10 | MET |
+| 4. Every error is JSON, never an HTML page | 72 of 72 | 72/72 | 72/72 | 72/72 | MET |
+| 5. Scores and labels unchanged from unit 8 | 10 of 10 | 10/10 | 10/10 | 10/10 | MET |
+
+**Before and After**
+
+| Criterion | Before | After |
+|---|---|---|
+| 1. Model failure | MISSED (10/11) | MET (11/11) |
+| 2. Slow model | MET | MET |
+| 3. Log failure | MET | MET |
+| 4. No HTML errors | MET | MET |
+| 5. Scores unchanged | MET | MET |
+
+**The attack set after the improvement.** `run_attacks.py::main` against the real server (`python app.py`, no fault), all 56 attacks: `results/attack_run_2026-11-21_1056_after_min_words.md`. Compared with the last unit 8 run (`results/attack_run_2026-11-15_1427_after.md`) on status, guess and score, exactly two attacks changed, both from BROKE to HELD under my unit 8 rules (malformed text that gets a 200 is BROKE, a clean 400 is HELD):
+
+| Attack | Unit 8 | After |
+|---|---|---|
+| MF05, a very long single word | 200, ai, 0.749 (BROKE) | 400 `text_too_short` (HELD) |
+| MF06, emoji only | 200, ai, 0.749 (BROKE) | 400 `text_too_short` (HELD) |
+
+The other 54 attacks got exactly the same status, guess and score as in unit 8, so no attack got worse. BROKE goes from 7 to 5: EV05, PI02, MF03, MF04 and MF07 are still in "What's Still Broken". RQ10 and RQ11 were rate-limited again in the full run, as in unit 8; re-run alone in unit 8, both got a clean 400.
+
+The responses to the two changed attacks from the new check in `app.py::submit`, as recorded by `run_capstone.py::c4_no_html` in After run 1:
+
+```json
+{"request": "attack MF05", "status": 400, "json": true, "response": {"error": "text_too_short", "message": "Text is too short to check. Please send at least a few sentences."}}
+{"request": "attack MF06", "status": 400, "json": true, "response": {"error": "text_too_short", "message": "Text is too short to check. Please send at least a few sentences."}}
+```
+
+**Real output from After run 1** (`results/capstone_2026-11-21_1050_after_run1.md`).
+
+**Criterion 1**, produced by `run_capstone.py::c1_model_failure` with `config.FAULT = "model_error"`. The response from `app.py::submit` (HTTP 200) for submission 1, and its log entry written by `audit.py::log_decision`:
+
+```json
+{"confidence": null, "content_id": "c_de42e9028878", "creator_id": "cap1_c1_1", "degraded": true, "degraded_reason": "model_error", "guess": "unsure", "label": "We couldn't fully check this text right now, so we can't say whether it was written by a person or with AI help. This is not an accusation. Please submit it again later for a full check.", "model_score": null, "style_score": 0.5322}
+```
+
+```json
+{"timestamp": "2026-11-21T03:48:12+00:00", "content_id": "c_de42e9028878", "creator_id": "cap1_c1_1", "guess": "unsure", "model_score": null, "style_score": 0.5322, "combined_score": null, "label": "We couldn't fully check this text right now, so we can't say whether it was written by a person or with AI help. This is not an accusation. Please submit it again later for a full check.", "status": "decided", "degraded": true, "degraded_reason": "model_error", "error_type": "RuntimeError", "duration_ms": 37.1, "text_chars": 430}
+```
+
+The two-letter text `"hi"` under the same fault, now refused by the new check in `app.py::submit` (HTTP 400):
+
+```json
+{"error": "text_too_short", "message": "Text is too short to check. Please send at least a few sentences."}
+```
+
+**Criterion 2**, produced by `run_capstone.py::c2_slow_model` with `config.FAULT = "model_slow"`. Submission 1 answered after 10.02 s (HTTP 200); the response from `app.py::submit` and the log entry from `audit.py::log_decision`:
+
+```json
+{"confidence": null, "content_id": "c_eb8735b7552a", "creator_id": "cap1_c2_1", "degraded": true, "degraded_reason": "timeout", "guess": "unsure", "label": "We couldn't fully check this text right now, so we can't say whether it was written by a person or with AI help. This is not an accusation. Please submit it again later for a full check.", "model_score": null, "style_score": 0.5322}
+```
+
+```json
+{"timestamp": "2026-11-21T03:48:44+00:00", "content_id": "c_eb8735b7552a", "creator_id": "cap1_c2_1", "guess": "unsure", "model_score": null, "style_score": 0.5322, "combined_score": null, "label": "We couldn't fully check this text right now, so we can't say whether it was written by a person or with AI help. This is not an accusation. Please submit it again later for a full check.", "status": "decided", "degraded": true, "degraded_reason": "timeout", "error_type": "TimeoutError", "duration_ms": 10011.2, "text_chars": 430}
+```
+
+**Criterion 3**, produced by `run_capstone.py::c3_log_failure` with `config.FAULT = "log_error"`. The response from `app.py::submit` (HTTP 503) for submission 1, and the console message written by `app.py::_log_unavailable` (no log entry, because the log is what failed):
+
+```json
+{"error": "service_unavailable", "message": "We couldn't save this result, so we can't give you one right now. Please try again in a few minutes."}
+```
+
+```
+ERROR in app: Could not write a decision to the audit log
+```
+
+**Criterion 4**, produced by `run_capstone.py::c4_no_html`. 72 requests: the attack set, 7 rapid submissions from one creator, bad appeals, an unknown URL and wrong methods. 0 responses weren't JSON and 0 were a 500. A selection of the responses, from `app.py::submit`, `app.py::appeal`, `app.py::rate_limited` and `app.py::handle_any_error`:
+
+```json
+{"request": "attack MF02", "status": 400, "json": true, "response": {"error": "text_too_short", "message": "Text is too short to check. Please send at least a few sentences."}}
+{"request": "attack MF05", "status": 400, "json": true, "response": {"error": "text_too_short", "message": "Text is too short to check. Please send at least a few sentences."}}
+{"request": "attack RQ07", "status": 400, "json": true, "response": {"error": "bad_request", "message": "Send a JSON object, like {\"text\": \"...\"}."}}
+{"request": "flood 6", "status": 429, "json": true, "response": {"error": "rate_limited", "limit": "5 per 1 minute", "message": "Too many submissions. Try again shortly."}}
+{"request": "/appeal JSON array", "status": 400, "json": true, "response": {"error": "bad_request", "message": "Send a JSON object, like {\"content_id\": \"...\", \"reasoning\": \"...\"}."}}
+{"request": "/appeal creator_id object", "status": 400, "json": true, "response": {"error": "bad_request", "message": "\"creator_id\" must be a non-empty string."}}
+{"request": "/appeal unknown content_id", "status": 404, "json": true, "response": {"error": "not_found", "message": "We couldn't find a submission with content ID c_000000000000. Please check the ID from your original result."}}
+{"request": "GET /nope", "status": 404, "json": true, "response": {"error": "not_found", "message": "The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again."}}
+{"request": "GET /submit", "status": 405, "json": true, "response": {"error": "method_not_allowed", "message": "The method is not allowed for the requested URL."}}
+{"request": "PUT /submit", "status": 405, "json": true, "response": {"error": "method_not_allowed", "message": "The method is not allowed for the requested URL."}}
+```
+
+**Criterion 5**, produced by `run_capstone.py::c5_nothing_changes` with no fault. The response from `app.py::submit` for text 1 and its log entry from `audit.py::log_decision`. Unit 8 gave this text guess "unsure", confidence 0.5322, model 0.8288, style 0.5322 (`results/run_2026-11-15_1427_after.md`):
+
+```json
+{"confidence": 0.5322, "content_id": "c_9a99c978712c", "creator_id": "cap1_c5_1", "degraded": false, "guess": "unsure", "label": "We can't tell whether this was written by a person or with AI help. Parts of it read like both. This is not an accusation. If you wrote it yourself, you can tell us by appealing with your content ID.", "model_score": 0.8288, "style_score": 0.5322}
+```
+
+```json
+{"timestamp": "2026-11-21T03:48:08+00:00", "content_id": "c_9a99c978712c", "creator_id": "cap1_c5_1", "guess": "unsure", "model_score": 0.8288, "style_score": 0.5322, "combined_score": 0.5322, "label": "We can't tell whether this was written by a person or with AI help. Parts of it read like both. This is not an accusation. If you wrote it yourself, you can tell us by appealing with your content ID.", "status": "decided", "duration_ms": 1677.5, "text_chars": 430}
+```
 
 <!-- ═════════════════════════════════════════════════════════════════════
 
