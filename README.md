@@ -889,7 +889,7 @@ The failures that are left come from the signals, not the route, so this change 
      what you'd do, and why you stopped. -->
 
 **Text that isn't English writing gets a confident label: MF03, MF04, MF05, MF06, MF07.** Still the worst problem: the Arabic text (MF07) is a real writer labelled AI.
-- **Update (extension):** MF05 and MF06 are fixed. The extension's "too short" check (fewer than 3 words → 400, before GPT-2 runs) now refuses both, so they moved from BROKE to HELD (see "Extension Run Log — After"). MF03, MF04 and MF07 are still broken.
+- **Update (extension):** MF05 and MF06 are fixed. The extension's "too short" check (fewer than 3 words → 400, before GPT-2 runs) now refuses both, so they moved from BROKE to HELD (see Capstone, "The Improvement"). MF03, MF04 and MF07 are still broken.
 - What I'd do: count how much of the text is English words before scoring. If there are too few, return unsure ("we can't check this kind of text") instead of a score. A second, simpler fix: make the combining rule never return AI when the style signal had nothing to measure (exactly 0.5).
 - Why I stopped: I'd have to choose what counts as "enough English", and a wrong cut-off would push real English writers with names, numbers or code into unsure. I wanted one clean improvement I could prove with the runs, and this needs its own testing on non-English and mixed-language text.
 
@@ -908,9 +908,11 @@ The failures that are left come from the signals, not the route, so this change 
 
 I'd keep making the AI label hard to reach, so fewer honest writers get accused, even though more AI text gets through as unsure. The people who pay for it are teachers and site owners, who get fewer confident answers and have to judge more unsure cases themselves, instead of writers like me who wrote every word in their second language.
 
-<!-- ═══════════════════════ EXTENSION ═══════════════════════ -->
+<!-- ═══════════════════════ CAPSTONE (UNIT 9) — THE EXTENSION ═══════════════════════ -->
 
 ---
+
+# Capstone
 
 ## What This Extends
 
@@ -960,6 +962,14 @@ I'd keep making the AI label hard to reach, so fewer honest writers get accused,
 3. A time limit on GPT-2
 4. When the audit log can't be written
 5. Instrument and deploy (later milestone)
+
+---
+
+## Running It
+
+**Path: local, with logs.** The service runs on my own laptop, and everything it does is written to `logs/audit.jsonl`. I didn't host it because it doesn't fit a free host: torch (about 200–800 MB) plus the GPT-2 weights (about 550 MB, loaded into memory) are already over a free tier's 512 MB before the first request, and a free host has no lasting disk, so the model would download again after every idle spin-down.
+
+**How to run it: [RUNNING.md](RUNNING.md)**, section "How I run it: local, with logs". It has what the environment needs (Python 3.11–3.13, the Visual C++ Redistributable on Windows), the exact start commands, the settings (`AI201_FAULT` and the others), where the logs are, and the fixes for the three things that failed when I cloned my own repo and followed it from scratch.
 
 ---
 
@@ -1076,14 +1086,16 @@ The first run was the slowest (1.0 s): torch does some setup on its first real c
 **The same number in the audit log:** every log entry now has `duration_ms` (how long the request took) and `text_chars` (how long the text was, without storing the text). So the cost of every real run can be read back from `logs/audit.jsonl`, not only from this test.
 
 **What it means in practice:**
-- **A hundred runs a day:** about 52 seconds of wall time (100 × 0.52 s), keeping the processor busy for about 3 minutes of CPU time (100 × 1.85 s), plus one 13.8-second model load when the server starts. API spend is $0, because nothing is hosted, and 3 CPU-minutes of electricity on a laptop is negligible. My rate limit allows 50 a day per writer, so 100 a day means at least two writers; the cost depends on the total number of submissions, not on who sends them.
+- **A hundred people a day:** if each person submits 3 times (a first check plus a couple of revisions), that's 100 × 3 = 300 runs. 300 × 0.52 s = 156 s ≈ 2.6 minutes of wall time, and 300 × 1.85 s = 555 s ≈ 9.3 minutes of CPU time a day, plus one 13.8-second model load at startup. API spend: 300 × $0 = $0, because nothing is hosted.
 - One writer at the daily limit (50 submissions) costs about 26 seconds of compute a day.
 - The detector only reads the first 400 tokens of a text, so a long text doesn't cost much more than a short one. I measured only the 87-word text, so I'm not claiming a number for the longest allowed text.
 - A run that times out costs much more: the writer waits the full 10 seconds, and GPT-2 keeps working in the background after that. In a test where the model wasn't loaded in advance, the first submission timed out and was logged with `duration_ms: 10057.7`.
 
 ---
 
-## Extension Run Log — Before
+## Run Log and Verdicts
+
+*The run before the improvement.*
 
 Three separate runs of `run_capstone.py --trials 1` (`run_capstone.py::main`). Each run started a fresh process with a fresh audit log and its own creator_ids. Every request goes through the real routes, `app.py::submit` and `app.py::appeal`, with Flask's test client, and each fault is switched with `config.FAULT`. Saved output: `results/capstone_2026-11-21_0440_run1.md`, `results/capstone_2026-11-21_0443_run2.md`, `results/capstone_2026-11-21_0446_run3.md`.
 
@@ -1159,7 +1171,7 @@ ERROR in app: Could not write a decision to the audit log
 {"timestamp": "2026-11-20T21:38:47+00:00", "content_id": "c_e6344519c940", "creator_id": "cap1_c5_1", "guess": "unsure", "model_score": 0.8288, "style_score": 0.5322, "combined_score": 0.5322, "label": "We can't tell whether this was written by a person or with AI help. Parts of it read like both. This is not an accusation. If you wrote it yourself, you can tell us by appealing with your content ID.", "status": "decided", "duration_ms": 828.3, "text_chars": 430}
 ```
 
-### Why criterion 1 is missed
+### The miss: criterion 1, stage and mechanism
 
 **What happened:** with GPT-2 broken, all 10 real submissions got the right degraded "unsure" answer, in all three runs. The one check that failed is the two-letter text `"hi"`: it got a 200 degraded answer instead of the 400 "too short" my criterion promises.
 
@@ -1169,24 +1181,24 @@ This isn't only a quirk of my fault switch. In a real failure, for example GPT-2
 
 **Who it affects:** nobody is accused. `"hi"` gets "unsure" and "please submit it again later" instead of "too short". But it breaks two promises: the criterion's 400, and the honesty of the label. "Submit it again later" is wrong advice for a text that will be refused as too short once the model works. It also costs a log entry and a content ID for a text that could never be scored.
 
-### Improvement
+---
 
-**What I'm changing:** I'm moving the "too short" check out of the part that can fail and into the route. `app.py::submit` gets one more input check, next to the ones for empty and too-long text: if the text has fewer than 3 words, it returns the 400 `text_too_short` right away, before GPT-2 is called. This check doesn't need the model or its tokenizer, so it works even when GPT-2 is broken.
+## The Improvement
+
+**What I changed:** I moved the "too short" check out of the part that can fail and into the route. `app.py::submit` got one more input check, next to the ones for empty and too-long text: if the text has fewer than 3 words, it now returns the 400 `text_too_short` right away, before GPT-2 is called. This check doesn't need the model or its tokenizer, so it works even when GPT-2 is broken.
 
 **Why 3 words:** the detector refuses texts with fewer than 3 GPT-2 tokens. A word is always at least one token, so any text with 3 or more words has at least 3 tokens. The route check therefore refuses every text the detector would refuse. `TextTooShort` in the detector stays as a backstop.
 
-**What I expect to change:**
+**What I expected to change** (the run log below confirms all three):
 - Criterion 1: `"hi"` gets a 400 whether the model works or not, so the target becomes 11 of 11.
 - A text of one or two very long words is now refused instead of scored. MF05 (one very long word, labelled AI in unit 8) should move from BROKE to HELD. One word isn't writing, so refusing it is the honest answer.
 - Criterion 5 (scores unchanged): my own texts are all far longer than 3 words, so their scores shouldn't move.
 
-**What I'm not doing:** rewording the criterion to "too-short text gets a 400 when no fault is on". That would make it pass without fixing anything, and the course rules say a missed target stays and gets a fix attempted.
+**What I didn't do:** reword the criterion to "too-short text gets a 400 when no fault is on". That would make it pass without fixing anything, and the course rules say a missed target stays and gets a fix attempted.
 
-**How I'll check it (After):** the same three separate runs of `run_capstone.py --trials 1` and the same table. I'll also run the attack set to confirm that MF05 changes and that no other attack gets worse.
+**How I checked it:** the same three separate runs of `run_capstone.py --trials 1` and the same table, plus the attack set, to confirm that MF05 changes and that no other attack gets worse.
 
----
-
-## Extension Run Log — After
+### Run Log — After
 
 The same three separate runs of `run_capstone.py --trials 1` (`run_capstone.py::main`), after the improvement: the "too short" check moved into `app.py::submit`, before GPT-2 runs (`MIN_WORDS = 3` in `config.py`). Everything else is the same as Before: a fresh process and audit log per run, its own creator_ids, the real routes through Flask's test client, and faults switched with `config.FAULT`. Saved output: `results/capstone_2026-11-21_1050_after_run1.md`, `results/capstone_2026-11-21_1053_after_run2.md`, `results/capstone_2026-11-21_1055_after_run3.md`.
 
@@ -1198,7 +1210,7 @@ The same three separate runs of `run_capstone.py --trials 1` (`run_capstone.py::
 | 4. Every error is JSON, never an HTML page | 72 of 72 | 72/72 | 72/72 | 72/72 | MET |
 | 5. Scores and labels unchanged from unit 8 | 10 of 10 | 10/10 | 10/10 | 10/10 | MET |
 
-**Before and After**
+#### Before and After
 
 | Criterion | Before | After |
 |---|---|---|
@@ -1286,6 +1298,36 @@ ERROR in app: Could not write a decision to the audit log
 ```json
 {"timestamp": "2026-11-21T03:48:08+00:00", "content_id": "c_9a99c978712c", "creator_id": "cap1_c5_1", "guess": "unsure", "model_score": 0.8288, "style_score": 0.5322, "combined_score": 0.5322, "label": "We can't tell whether this was written by a person or with AI help. Parts of it read like both. This is not an accusation. If you wrote it yourself, you can tell us by appealing with your content ID.", "status": "decided", "duration_ms": 1677.5, "text_chars": 430}
 ```
+
+---
+
+## What's Still Broken
+
+All five capstone criteria are met, but criterion 2's target was set too low. "Answers within 12 seconds" only checks that my 10-second time limit works, and the runs answered at 10.0 s every time, so it couldn't fail. A normal check takes 0.4–0.9 s, so a writer waits more than ten times longer than needed before learning the check failed. I'd tighten it to a 3-second time limit (more than three times my slowest normal check, 1.0 s) and a target of "10 of 10 answer within 4 seconds".
+
+My fault tests switch `config.FAULT` inside one process. Each criterion is also worth proving once the way it's written, by restarting the server with `AI201_FAULT`, which I did only for the timeout.
+
+### The one thing I'd do first
+
+First I'd stop the service from judging text it can't read: if most of the text isn't English words, answer "unsure" instead of scoring it. That's the one first because it's the only failure that falsely accuses a real person, the Arabic writer in MF07, and it hits the same writers my whole design is meant to protect.
+
+---
+
+## How I Used AI
+
+Throughout the capstone I had Claude run the checks (the cost measurement, the logging check, the three criteria runs before and after the improvement, and the attack set) and log the details: every run's real output is saved in `results/`, and the responses and log lines are pasted into this README. The two moments below are where I changed what came back.
+
+**Moment 1: writing the capstone criteria**
+
+- *What I asked for:* I gave Claude my four criteria for the extension (unexpected errors, degraded mode, the time limit, the log failure) and asked it to write them into the Unit 9 template in `criteria.md`.
+- *What came back:* Claude wrote them in with a reason under each, and cleaned up the wording. For example, "requests over the limit" could be read as the rate limit, so it became "GPT-2 takes longer than the time limit". It left the fifth slot empty.
+- *What I changed:* I compared them with the five criteria in my extension plan and decided the plan's were better: they say how each failure is triggered (`AI201_FAULT=...`) and give a number you can measure (12 seconds, 0 HTML pages). I had the two sets merged into five. My "10 of 10 unexpected errors" couldn't be triggered on demand, so it went into "No HTML errors", which can be counted, and "Nothing else changes" filled the fifth slot.
+
+**Moment 2: checking the preliminary feedback**
+
+- *What I asked for:* I pasted my preliminary feedback and asked Claude to check whether anything had to be fixed before I committed and ran the criteria.
+- *What came back:* Claude confirmed all three points in the code. `/appeal` still accepted a `creator_id` that wasn't a string (the RQ06 bug, which `/submit` already rejected), `RATE_LIMITING_ENABLED` was the string `'True'`, so `'False'` would have left it on, and `except ValueError` would have answered "too short" for any `ValueError` from inside torch. It fixed all three, gave "too short" its own error type (`TextTooShort`), and ran a check for each fix.
+- *What I changed:* I asked whether my criteria had to change after the fixes (they didn't), and had every fix written up in `ABOUT/HOW_IT_WORKS.md`, so I understand the lesson and not only the code: when I fix a bug in one place, check the similar places for the same kind of bug.
 
 <!-- ═════════════════════════════════════════════════════════════════════
 
