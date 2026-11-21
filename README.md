@@ -1082,7 +1082,7 @@ The first run was the slowest (1.0 s): torch does some setup on its first real c
 
 ---
 
-## Extension Run Log
+## Extension Run Log — Before
 
 Three separate runs of `run_capstone.py --trials 1` (`run_capstone.py::main`). Each run started a fresh process with a fresh audit log and its own creator_ids. Every request goes through the real routes, `app.py::submit` and `app.py::appeal`, with Flask's test client, and each fault is switched with `config.FAULT`. Saved output: `results/capstone_2026-11-21_0440_run1.md`, `results/capstone_2026-11-21_0443_run2.md`, `results/capstone_2026-11-21_0446_run3.md`.
 
@@ -1157,6 +1157,31 @@ ERROR in app: Could not write a decision to the audit log
 ```json
 {"timestamp": "2026-11-20T21:38:47+00:00", "content_id": "c_e6344519c940", "creator_id": "cap1_c5_1", "guess": "unsure", "model_score": 0.8288, "style_score": 0.5322, "combined_score": 0.5322, "label": "We can't tell whether this was written by a person or with AI help. Parts of it read like both. This is not an accusation. If you wrote it yourself, you can tell us by appealing with your content ID.", "status": "decided", "duration_ms": 828.3, "text_chars": 430}
 ```
+
+### Why criterion 1 is missed
+
+**What happened:** with GPT-2 broken, all 10 real submissions got the right degraded "unsure" answer, in all three runs. The one check that failed is the two-letter text `"hi"`: it got a 200 degraded answer instead of the 400 "too short" my criterion promises.
+
+**Stage and mechanism:** the route, through signal one. The only "too short" check lives inside the detector: `detector.perplexity` asks GPT-2's tokenizer to split the text into tokens and raises `TextTooShort` if there are fewer than 3. But the model failure happens first, at the top of `detector.model_signal`, before `perplexity` is ever called. So when the model is broken, nothing checks the length, and every text, even `"hi"`, falls through to degraded mode.
+
+This isn't only a quirk of my fault switch. In a real failure, for example GPT-2 not loading, the tokenizer comes from the same download and can be missing too, so the length still couldn't be checked. My design put the input check inside the part that can fail.
+
+**Who it affects:** nobody is accused. `"hi"` gets "unsure" and "please submit it again later" instead of "too short". But it breaks two promises: the criterion's 400, and the honesty of the label. "Submit it again later" is wrong advice for a text that will be refused as too short once the model works. It also costs a log entry and a content ID for a text that could never be scored.
+
+### Improvement
+
+**What I'm changing:** I'm moving the "too short" check out of the part that can fail and into the route. `app.py::submit` gets one more input check, next to the ones for empty and too-long text: if the text has fewer than 3 words, it returns the 400 `text_too_short` right away, before GPT-2 is called. This check doesn't need the model or its tokenizer, so it works even when GPT-2 is broken.
+
+**Why 3 words:** the detector refuses texts with fewer than 3 GPT-2 tokens. A word is always at least one token, so any text with 3 or more words has at least 3 tokens. The route check therefore refuses every text the detector would refuse. `TextTooShort` in the detector stays as a backstop.
+
+**What I expect to change:**
+- Criterion 1: `"hi"` gets a 400 whether the model works or not, so the target becomes 11 of 11.
+- A text of one or two very long words is now refused instead of scored. MF05 (one very long word, labelled AI in unit 8) should move from BROKE to HELD. One word isn't writing, so refusing it is the honest answer.
+- Criterion 5 (scores unchanged): my own texts are all far longer than 3 words, so their scores shouldn't move.
+
+**What I'm not doing:** rewording the criterion to "too-short text gets a 400 when no fault is on". That would make it pass without fixing anything, and the course rules say a missed target stays and gets a fix attempted.
+
+**How I'll check it (After):** the same three separate runs of `run_capstone.py --trials 1` and the same table. I'll also run the attack set to confirm that MF05 changes and that no other attack gets worse.
 
 <!-- ═════════════════════════════════════════════════════════════════════
 
